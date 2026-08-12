@@ -31,6 +31,10 @@ dist/
 dist.noindex/
 *.spec
 
+# Intermediate PNGs for the icon; icon.icns is committed, this is regenerated
+# from make_icon.py on every build.
+assets/icon.iconset/
+
 # Generated VPN configs. Real key material lives outside the repo entirely
 # (~/Library/Application Support/VPN Agent/), but these patterns make sure a
 # stray export or installer script can never be committed by accident.
