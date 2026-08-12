@@ -2,65 +2,18 @@
 doc_content.py — HTML documentation content for the in-app guide.
 Rendered by QTextBrowser in doc_dialog.py.
 The same content exists as docs/GUIDE.md for standalone reading.
+
+This guide covers running tunnels. Building the servers behind them is a large
+enough subject to have its own document — see server_doc_content.py.
 """
 
-DOC_HTML = """<!DOCTYPE html>
-<html>
-<head>
-<style>
-body {
-    background-color: #0f0f0f;
-    color: #d0d0d0;
-    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-    font-size: 13px;
-    line-height: 1.7;
-    margin: 0;
-    padding: 0 4px;
-}
-h1 { color: #00e5ff; font-size: 20px; border-bottom: 1px solid #1a2a2a; padding-bottom: 8px; margin-top: 24px; }
-h2 { color: #90caf9; font-size: 16px; margin-top: 28px; border-bottom: 1px solid #1a1a1a; padding-bottom: 5px; }
-h3 { color: #80cbc4; font-size: 13px; margin-top: 18px; font-weight: bold; }
-h4 { color: #aaaaaa; font-size: 12px; margin-top: 14px; font-weight: bold; }
-p  { margin: 8px 0; }
-a  { color: #4fc3f7; }
-code {
-    background: #1a1a1a;
-    color: #c5e1a5;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: "Menlo", "Monaco", "Courier New", monospace;
-    font-size: 11px;
-}
-pre {
-    background: #111111;
-    color: #c5e1a5;
-    padding: 14px 16px;
-    border-radius: 6px;
-    border-left: 3px solid #2a3a2a;
-    font-family: "Menlo", "Monaco", "Courier New", monospace;
-    font-size: 11px;
-    margin: 10px 0;
-    white-space: pre-wrap;
-}
-ul, ol { padding-left: 22px; margin: 8px 0; }
-li { margin: 4px 0; }
-hr { border: none; border-top: 1px solid #1e1e1e; margin: 24px 0; }
-table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-th { background: #1a1a1a; color: #90caf9; padding: 8px 12px; text-align: left; border: 1px solid #2a2a2a; font-size: 12px; }
-td { padding: 7px 12px; border: 1px solid #1e1e1e; color: #cccccc; font-size: 12px; }
-.warn  { color: #ff9800; font-weight: bold; }
-.danger{ color: #f44336; font-weight: bold; }
-.ok    { color: #66bb6a; font-weight: bold; }
-.note  { color: #90caf9; }
-.tip   { background: #0a1a0a; border-left: 3px solid #2e7d32; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
-.warning-box { background: #1a0e00; border-left: 3px solid #ff6f00; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
-.danger-box  { background: #1a0000; border-left: 3px solid #c62828; padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
-.toc { background: #111111; border: 1px solid #1e1e1e; border-radius: 6px; padding: 14px 18px; margin: 14px 0; }
-.toc a { color: #80cbc4; text-decoration: none; }
-.toc li { margin: 3px 0; font-size: 12px; }
-</style>
-</head>
-<body>
+from app.doc_style import DOC_CSS
+
+DOC_HTML = (
+    "<!DOCTYPE html>\n<html>\n<head>\n<style>"
+    + DOC_CSS
+    + "</style>\n</head>\n<body>"
+    + """
 
 <h1>VPN Agent — Complete Guide</h1>
 <p>A personal VPN control center for managing WireGuard tunnels, monitoring health, and running your own private VPN infrastructure.</p>
@@ -100,7 +53,9 @@ td { padding: 7px 12px; border: 1px solid #1e1e1e; color: #cccccc; font-size: 12
 <ul>
 <li>It is not a commercial VPN service</li>
 <li>It does not manage VPN accounts or subscriptions</li>
-<li>It does not provide servers — you bring your own (VPS, home server, GL.iNet router)</li>
+<li>It is not a hosting provider — you supply the machine (a rented VPS, a Raspberry Pi,
+a GL.iNet router). The <b>Build Server</b> tab then turns that machine into a working
+VPN server for you — press <b>? Server Guide</b> on that tab for the whole procedure.</li>
 </ul>
 
 <hr>
@@ -556,3 +511,4 @@ sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder</pre>
 
 </body>
 </html>"""
+)

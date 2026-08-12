@@ -7,13 +7,14 @@ All network calls run in background QThread workers to keep the GUI responsive.
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox,
-    QSizePolicy, QFrame,
+    QSizePolicy, QFrame, QTabWidget,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QObject, QEvent
 from PySide6.QtWidgets import QApplication
 
 from app.styles import DARK_STYLESHEET
 from app.doc_dialog import DocDialog
+from app.server_tab import ServerTab
 from services import public_ip, dns_check, latency, profile_store, wireguard_manager
 from services.health_monitor import HealthMonitor
 
@@ -62,7 +63,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("VPN Agent")
-        self.setMinimumSize(760, 620)
+        # The Build Server tab carries a full configuration form, a device list
+        # and a deploy log; below this the form rows start getting clipped.
+        self.setMinimumSize(940, 720)
+        self.resize(1020, 820)
         self.setStyleSheet(DARK_STYLESHEET)
 
         self._threads = []
@@ -82,10 +86,18 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(self._build_title_bar())
         root_layout.addWidget(self._build_warning_banner())  # hidden by default
-        root_layout.addWidget(self._build_profile_row())
-        root_layout.addWidget(self._build_status_panels())
-        root_layout.addWidget(self._build_action_buttons())
-        root_layout.addWidget(self._build_log_area())
+
+        # Two halves of the same job: Monitor watches a tunnel, Build Server
+        # creates the thing at the far end of it. The title bar and warning
+        # banner stay outside the tabs — a tunnel dropping is worth seeing
+        # whichever tab happens to be open.
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("MainTabs")
+        self.tabs.addTab(self._build_monitor_tab(), "Monitor")
+
+        self.server_tab = ServerTab()
+        self.tabs.addTab(self.server_tab, "Build Server")
+        root_layout.addWidget(self.tabs)
 
         self._init_health_monitor()  # must come before _refresh_profiles
         self._refresh_profiles()     # triggers currentTextChanged which needs _health_monitor
@@ -94,6 +106,20 @@ class MainWindow(QMainWindow):
         self.on_refresh()
 
     # ── UI builders ──────────────────────────────
+
+    def _build_monitor_tab(self) -> QWidget:
+        """The original dashboard: profile, live status, controls, activity log."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 12, 0, 0)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._build_profile_row())
+        layout.addWidget(self._build_status_panels())
+        layout.addWidget(self._build_action_buttons())
+        layout.addWidget(self._build_log_area())
+
+        return container
 
     def _build_title_bar(self) -> QWidget:
         container = QWidget()
@@ -656,6 +682,21 @@ class MainWindow(QMainWindow):
         self._log(f"Testing latency to {host}…")
         self._run_in_thread(latency.measure_latency, host, on_result=self._on_latency_result)
 
+    def present(self) -> None:
+        """
+        Bring this window to the front.
+
+        Called when a second launch is turned away by the single-instance
+        guard — the user double-clicked the Dock icon expecting a window, so
+        showing the one that already exists is the right answer. Handles the
+        minimised case too, which a bare raise_() would leave in the Dock.
+        """
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     def on_open_docs(self) -> None:
         if self._doc_dialog is None or not self._doc_dialog.isVisible():
             self._doc_dialog = DocDialog(parent=self)
@@ -677,6 +718,12 @@ class MainWindow(QMainWindow):
         Fix: disconnect all signals first (so no callback fires into a dying object),
         then quit+wait with a short timeout, then hard-terminate anything left alive.
         """
+        # 0. The server tab runs its own workers — a deploy can still be
+        #    streaming apt-get output. Same hazard, same fix, and it has to
+        #    happen before Qt starts destroying child widgets.
+        if getattr(self, "server_tab", None) is not None:
+            self.server_tab.shutdown()
+
         # 1. Disconnect health monitor signals immediately — prevents any
         #    in-flight thread from firing a callback into this window
         if self._health_monitor is not None:

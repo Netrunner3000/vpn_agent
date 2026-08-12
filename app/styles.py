@@ -221,4 +221,117 @@ QPushButton#HelpButton:hover {
     color: #90caf9;
     border: 1px solid #334455;
 }
+
+/* ── Server tab ───────────────────────────────── */
+
+QTabWidget#MainTabs::pane {
+    border: 1px solid #222222;
+    border-radius: 8px;
+    background-color: #0f0f0f;
+    top: -1px;
+}
+
+QTabWidget#MainTabs QTabBar::tab {
+    background-color: #141414;
+    color: #666666;
+    border: 1px solid #222222;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 8px 20px;
+    margin-right: 3px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+QTabWidget#MainTabs QTabBar::tab:selected {
+    background-color: #0f0f0f;
+    color: #00e5ff;
+    border-color: #2a3a3f;
+}
+
+QTabWidget#MainTabs QTabBar::tab:hover:!selected {
+    color: #90caf9;
+}
+
+QListWidget#PeerList {
+    background-color: #0d0d0d;
+    color: #e0e0e0;
+    border: 1px solid #222222;
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 12px;
+}
+
+QListWidget#PeerList::item {
+    padding: 5px 6px;
+    border-radius: 4px;
+}
+
+QListWidget#PeerList::item:selected {
+    background-color: #10323a;
+    color: #00e5ff;
+}
+
+QPlainTextEdit#DeployOutput {
+    background-color: #0a0a0a;
+    color: #b8b8b8;
+    border: 1px solid #222222;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11px;
+}
+
+/* min-height is load-bearing, not cosmetic: a QFormLayout with this many rows
+   will happily squeeze each one down to ~18px, and the padding below then
+   leaves less room than the font needs — so the text renders clipped through
+   the middle. The minimum stops the row collapsing under the font height. */
+QLineEdit, QSpinBox {
+    background-color: #141414;
+    color: #e0e0e0;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    padding: 3px 8px;
+    min-height: 19px;
+    font-size: 12px;
+}
+
+QLineEdit:focus, QSpinBox:focus {
+    border-color: #00e5ff;
+}
+
+QLineEdit:disabled, QSpinBox:disabled {
+    color: #555555;
+    background-color: #101010;
+}
+
+QCheckBox {
+    color: #b0b0b0;
+    font-size: 12px;
+    spacing: 7px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #333333;
+    border-radius: 3px;
+    background-color: #141414;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #00e5ff;
+    border-color: #00e5ff;
+}
+
+QDialog {
+    background-color: #0f0f0f;
+}
+
+QDialog QLabel {
+    color: #c0c0c0;
+    font-size: 12px;
+}
 """

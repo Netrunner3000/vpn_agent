@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.doc_dialog import DocDialog
+from app.server_doc_content import SERVER_DOC_HTML
 from server import deploy as deploy_mod
 from server import export, paths, provision, store
 from server.model import MODE_NATIVE, MODE_REMOTE, Site
@@ -194,6 +196,7 @@ class ServerTab(QWidget):
         self._site: Site | None = None
         self._threads: list[QThread] = []
         self._busy = False
+        self._guide_dialog = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -205,10 +208,15 @@ class ServerTab(QWidget):
         columns.setSpacing(12)
         columns.addWidget(self._build_settings_panel(), stretch=1)
         columns.addWidget(self._build_peers_panel(), stretch=1)
-        root.addLayout(columns)
+
+        # The configuration form has a fixed number of rows and a real minimum
+        # height; the output pane can shrink to nothing without harm. Giving the
+        # columns the larger share stops the form being squeezed until its last
+        # row — the Save button — is cut in half.
+        root.addLayout(columns, stretch=3)
 
         root.addWidget(self._build_deploy_panel())
-        root.addWidget(self._build_output(), stretch=1)
+        root.addWidget(self._build_output(), stretch=2)
 
         self._refresh_sites()
 
@@ -227,16 +235,35 @@ class ServerTab(QWidget):
         self.combo_sites = QComboBox()
         self.combo_sites.setObjectName("ProfileDropdown")
         self.combo_sites.setMinimumWidth(220)
+        self.combo_sites.setToolTip(
+            "The VPN servers you have built.\n\n"
+            "Each one keeps its own keys, certificate authority and device list in\n"
+            "~/Library/Application Support/VPN Agent/sites/ — never inside this app\n"
+            "and never inside the git repo."
+        )
         self.combo_sites.currentTextChanged.connect(self._on_site_selected)
         layout.addWidget(self.combo_sites)
 
         self.btn_new = QPushButton("New Server")
         self.btn_new.setObjectName("ConnectButton")
+        self.btn_new.setToolTip(
+            "Create a new VPN server and generate its identity.\n\n"
+            "Generates the WireGuard server keypair and, if enabled, an OpenVPN\n"
+            "certificate authority. This happens on your machine — the server never\n"
+            "creates its own keys and never sees the CA key.\n\n"
+            "Nothing is installed anywhere until you press Deploy."
+        )
         self.btn_new.clicked.connect(self.on_new_site)
         layout.addWidget(self.btn_new)
 
         self.btn_delete = QPushButton("Delete")
         self.btn_delete.setObjectName("DisconnectButton")
+        self.btn_delete.setToolTip(
+            "Delete this server's local state.\n\n"
+            "DESTRUCTIVE. This is the only copy of the server and CA private keys.\n"
+            "Every config you have handed out stops working and none can be reissued.\n\n"
+            "The server itself keeps running — use Tear Down first if you want it gone."
+        )
         self.btn_delete.clicked.connect(self.on_delete_site)
         layout.addWidget(self.btn_delete)
 
@@ -245,6 +272,17 @@ class ServerTab(QWidget):
         self.lbl_state = QLabel("—")
         self.lbl_state.setObjectName("StatusNeutral")
         layout.addWidget(self.lbl_state)
+
+        self.btn_guide = QPushButton("? Server Guide")
+        self.btn_guide.setObjectName("HelpButton")
+        self.btn_guide.setToolTip(
+            "Open the server-building guide.\n\n"
+            "Covers choosing between remote and native, picking a VPS, what the\n"
+            "installer does to the machine, getting configs onto phones, where your\n"
+            "keys are stored, and what this setup does not protect you from."
+        )
+        self.btn_guide.clicked.connect(self.on_open_guide)
+        layout.addWidget(self.btn_guide)
 
         return container
 
@@ -256,48 +294,134 @@ class ServerTab(QWidget):
 
         self.lbl_mode = QLabel("—")
         self.lbl_mode.setObjectName("StatusValue")
+        self.lbl_mode.setToolTip(
+            "Where this server runs. Fixed when you create it.\n\n"
+            "Remote — a rented host reached over SSH. Traffic exits there, so your\n"
+            "  apparent IP and country become the server's. This is the mode that\n"
+            "  hides your home connection.\n\n"
+            "Native — hardware you own on your own LAN. Traffic exits through your\n"
+            "  own ISP, so it does NOT change your apparent location. What it gives\n"
+            "  you is an encrypted way back into your home network from outside."
+        )
         form.addRow("Mode", self.lbl_mode)
 
         self.edit_endpoint = QLineEdit()
         self.edit_endpoint.setPlaceholderText("public IP or DNS name")
+        self.edit_endpoint.setToolTip(
+            "The address clients dial to reach this server.\n\n"
+            "For a VPS: its public IP.\n"
+            "For a home server: a dynamic-DNS name. A home IP changes whenever your\n"
+            "ISP feels like it, and every config you handed out points at the old one.\n\n"
+            "Changing this reissues the OpenVPN server certificate so its subject\n"
+            "names still match — otherwise clients start failing verification."
+        )
         form.addRow("Endpoint", self.edit_endpoint)
 
         self.edit_ssh = QLineEdit()
         self.edit_ssh.setPlaceholderText("root@host")
+        self.edit_ssh.setToolTip(
+            "Where to deploy, as user@host. Remote mode only.\n\n"
+            "Key-based authentication only — this never asks for or stores a password.\n"
+            "As a non-root user the installer runs under `sudo -n`, which needs\n"
+            "passwordless sudo configured on the target."
+        )
         form.addRow("SSH", self.edit_ssh)
 
         self.spin_wg_port = QSpinBox()
         self.spin_wg_port.setRange(1, 65535)
+        self.spin_wg_port.setToolTip(
+            "UDP port WireGuard listens on. 51820 is the convention.\n\n"
+            "Worth changing if you are on a network that throttles the default.\n"
+            "Remember to open it on the host's firewall and, for a home server,\n"
+            "to forward it on your router."
+        )
         form.addRow("WireGuard port", self.spin_wg_port)
 
         self.spin_ovpn_port = QSpinBox()
         self.spin_ovpn_port.setRange(1, 65535)
+        self.spin_ovpn_port.setToolTip(
+            "TCP port for the OpenVPN fallback. 443 by default, deliberately.\n\n"
+            "443 is the HTTPS port, so the traffic passes on networks that allow\n"
+            "only web browsing. Combined with tls-crypt, a scanner probing the port\n"
+            "gets no OpenVPN handshake to fingerprint.\n\n"
+            "If the host also serves real HTTPS on 443, pick another port."
+        )
         form.addRow("OpenVPN port", self.spin_ovpn_port)
 
         self.chk_openvpn = QCheckBox("OpenVPN TCP fallback")
+        self.chk_openvpn.setToolTip(
+            "Run an OpenVPN endpoint alongside WireGuard.\n\n"
+            "WireGuard is UDP, and some networks — hotels, corporate guest wifi,\n"
+            "airports — pass only TCP 80 and 443. There WireGuard simply cannot\n"
+            "connect, and the fallback is the only thing that works.\n\n"
+            "It is slower. Use WireGuard by default and reach for the .ovpn profile\n"
+            "only when the tunnel will not come up.\n\n"
+            "Enabling this later issues certificates for every existing device."
+        )
         form.addRow("", self.chk_openvpn)
 
         self.chk_full_tunnel = QCheckBox("Route all client traffic through the server")
+        self.chk_full_tunnel.setToolTip(
+            "On  — every packet goes through the tunnel. Your apparent IP becomes\n"
+            "     the server's. This is what you want on a VPS.\n\n"
+            "Off — only the VPN subnet and the LAN routes below go through the\n"
+            "     tunnel; everything else uses the normal connection. This is the\n"
+            "     sane default for a home server, whose exit IP is your own ISP\n"
+            "     anyway, so routing all traffic through it buys nothing and costs\n"
+            "     you a round trip."
+        )
         form.addRow("", self.chk_full_tunnel)
 
         self.edit_dns = QLineEdit()
         self.edit_dns.setPlaceholderText("1.1.1.1, 1.0.0.1")
+        self.edit_dns.setToolTip(
+            "Resolvers pushed to clients, comma separated.\n\n"
+            "Without this a client keeps using whatever resolver the local network\n"
+            "handed it — so the tunnel hides the traffic while the DNS lookups still\n"
+            "announce every site visited. That is a DNS leak, and it is exactly what\n"
+            "the Monitor tab checks for.\n\n"
+            "For a home server you may prefer your router's address, so names on\n"
+            "your own LAN still resolve."
+        )
         form.addRow("Push DNS", self.edit_dns)
 
         self.edit_lan = QLineEdit()
         self.edit_lan.setPlaceholderText("192.168.1.0/24")
+        self.edit_lan.setToolTip(
+            "Extra networks clients should reach through the tunnel, comma separated.\n"
+            "Only used in split-tunnel mode.\n\n"
+            "This is what lets you reach your home NAS, printer or router from a\n"
+            "hotel. Set it to the subnet your home devices actually live on — check\n"
+            "your router if you are not sure whether it is 192.168.1.0/24 or\n"
+            "192.168.8.0/24."
+        )
         form.addRow("LAN routes", self.edit_lan)
 
-        self.lbl_pubkey = QLabel("—")
-        self.lbl_pubkey.setObjectName("StatusValue")
-        self.lbl_pubkey.setWordWrap(True)
-        self.lbl_pubkey.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
+        # A read-only field rather than a label: a 44-character base64 key is
+        # wider than the column, and a label would either wrap into a row the
+        # form has already squeezed flat or silently truncate. A field scrolls,
+        # and the value is meant to be selected and copied anyway.
+        self.lbl_pubkey = QLineEdit("—")
+        self.lbl_pubkey.setReadOnly(True)
+        self.lbl_pubkey.setCursorPosition(0)
+        self.lbl_pubkey.setToolTip(
+            "This server's WireGuard public key. Safe to share — it is in every\n"
+            "client config already.\n\n"
+            "The matching private key stays in the site file on this machine and is\n"
+            "written to the server only during a deploy, over the SSH channel."
         )
         form.addRow("Public key", self.lbl_pubkey)
 
         self.btn_save = QPushButton("Save Configuration")
         self.btn_save.setObjectName("ActionButton")
+        # Last row of a crowded form: without a floor the layout shrinks it
+        # until the label is cut through the middle.
+        self.btn_save.setMinimumHeight(30)
+        self.btn_save.setToolTip(
+            "Save these settings to the site file.\n\n"
+            "Saving only records the change locally. The server keeps running its\n"
+            "old configuration until you press Deploy."
+        )
         self.btn_save.clicked.connect(self.on_save_settings)
         form.addRow("", self.btn_save)
 
@@ -312,6 +436,13 @@ class ServerTab(QWidget):
         self.list_peers = QListWidget()
         self.list_peers.setObjectName("PeerList")
         self.list_peers.setMinimumHeight(150)
+        self.list_peers.setToolTip(
+            "Devices allowed to connect to this server.\n\n"
+            "Each gets its own keypair, its own pre-shared key and its own address,\n"
+            "so one device being lost never exposes the others.\n\n"
+            "Greyed out means disabled — it keeps its keys but is left out of the\n"
+            "server config on the next deploy."
+        )
         self.list_peers.itemSelectionChanged.connect(self._update_peer_buttons)
         layout.addWidget(self.list_peers, stretch=1)
 
@@ -319,16 +450,35 @@ class ServerTab(QWidget):
         row1.setSpacing(6)
         self.btn_add_peer = QPushButton("Add Device")
         self.btn_add_peer.setObjectName("ConnectButton")
+        self.btn_add_peer.setToolTip(
+            "Generate credentials for one more device.\n\n"
+            "Creates a WireGuard keypair, a pre-shared key, the next free address\n"
+            "and — if the fallback is on — an OpenVPN client certificate.\n\n"
+            "Give each device its own entry rather than sharing one config. Sharing\n"
+            "means you cannot revoke a single lost phone without cutting off\n"
+            "everything else."
+        )
         self.btn_add_peer.clicked.connect(self.on_add_peer)
         row1.addWidget(self.btn_add_peer)
 
         self.btn_toggle_peer = QPushButton("Disable")
         self.btn_toggle_peer.setObjectName("ActionButton")
+        self.btn_toggle_peer.setToolTip(
+            "Switch a device off without discarding its keys.\n\n"
+            "It keeps its address and certificate, so you can switch it back on\n"
+            "later without reissuing anything to the device.\n\n"
+            "Takes effect on the next deploy."
+        )
         self.btn_toggle_peer.clicked.connect(self.on_toggle_peer)
         row1.addWidget(self.btn_toggle_peer)
 
         self.btn_remove_peer = QPushButton("Remove")
         self.btn_remove_peer.setObjectName("DisconnectButton")
+        self.btn_remove_peer.setToolTip(
+            "Delete this device and discard its keys. Its address is freed for reuse.\n\n"
+            "Removing here does not revoke anything by itself — the device keeps\n"
+            "working until you Deploy, which is what actually rewrites the server."
+        )
         self.btn_remove_peer.clicked.connect(self.on_remove_peer)
         row1.addWidget(self.btn_remove_peer)
         layout.addLayout(row1)
@@ -337,16 +487,39 @@ class ServerTab(QWidget):
         row2.setSpacing(6)
         self.btn_qr = QPushButton("Show QR")
         self.btn_qr.setObjectName("ActionButton")
+        self.btn_qr.setToolTip(
+            "Show this device's WireGuard config as a scannable code.\n\n"
+            "On the phone: WireGuard app → Add tunnel → Create from QR code.\n"
+            "Far easier than moving a file onto a phone.\n\n"
+            "The code encodes a private key. Anyone who photographs your screen\n"
+            "has your tunnel — do not project it or screenshot it into a chat.\n\n"
+            "WireGuard only: an .ovpn carries a whole certificate chain and will\n"
+            "not fit in a QR code."
+        )
         self.btn_qr.clicked.connect(self.on_show_qr)
         row2.addWidget(self.btn_qr)
 
         self.btn_export = QPushButton("Export Configs")
         self.btn_export.setObjectName("ActionButton")
+        self.btn_export.setToolTip(
+            "Write this device's config files to a folder you choose.\n\n"
+            "Produces a .conf for WireGuard and, if the fallback is on, a\n"
+            "self-contained .ovpn with its keys inlined.\n\n"
+            "Both contain private keys and are written owner-readable only.\n"
+            "Delete them once the device has imported them, and do not send them\n"
+            "through email or a cloud drive."
+        )
         self.btn_export.clicked.connect(self.on_export)
         row2.addWidget(self.btn_export)
 
         self.btn_rotate = QPushButton("Rotate Keys")
         self.btn_rotate.setObjectName("ActionButton")
+        self.btn_rotate.setToolTip(
+            "Issue fresh keys for this device, keeping its name and address.\n\n"
+            "This is what you do when a phone or laptop is lost or stolen. The old\n"
+            "config stops working as soon as you deploy; the new one has to be\n"
+            "delivered to the replacement device."
+        )
         self.btn_rotate.clicked.connect(self.on_rotate_peer)
         row2.addWidget(self.btn_rotate)
         layout.addLayout(row2)
@@ -361,26 +534,67 @@ class ServerTab(QWidget):
 
         self.btn_check = QPushButton("Check")
         self.btn_check.setObjectName("ActionButton")
+        self.btn_check.setToolTip(
+            "Validate the configuration and test the connection, without changing\n"
+            "anything.\n\n"
+            "Catches the things that would otherwise fail halfway through an\n"
+            "install: overlapping subnets, a missing endpoint, an unreachable host,\n"
+            "a key SSH will not accept, a target that is not Debian or Ubuntu.\n\n"
+            "Always safe to run."
+        )
         self.btn_check.clicked.connect(self.on_check)
         layout.addWidget(self.btn_check)
 
         self.btn_deploy = QPushButton("Deploy")
         self.btn_deploy.setObjectName("ConnectButton")
+        self.btn_deploy.setToolTip(
+            "Install and start the VPN on the target host.\n\n"
+            "Installs the packages, writes the configs, enables IP forwarding, sets\n"
+            "up NAT and starts both services. Idempotent — running it twice changes\n"
+            "nothing the second time, which is why adding a device is just another\n"
+            "deploy.\n\n"
+            "Adding a peer reloads WireGuard in place, so tunnels that are already\n"
+            "up stay up.\n\n"
+            "This is also the step that applies removals: a device you deleted keeps\n"
+            "working until you deploy."
+        )
         self.btn_deploy.clicked.connect(self.on_deploy)
         layout.addWidget(self.btn_deploy)
 
         self.btn_script = QPushButton("Save Installer Script")
         self.btn_script.setObjectName("ActionButton")
+        self.btn_script.setToolTip(
+            "Write the installer to a file instead of running it.\n\n"
+            "Use this to read exactly what would be done before letting it touch a\n"
+            "server, or to install on a host this app cannot reach over SSH — copy\n"
+            "the script across and run it with sudo.\n\n"
+            "It embeds the server's private keys. Run it, then delete it."
+        )
         self.btn_script.clicked.connect(self.on_save_script)
         layout.addWidget(self.btn_script)
 
         self.btn_register = QPushButton("Add to Profiles")
         self.btn_register.setObjectName("ActionButton")
+        self.btn_register.setToolTip(
+            "Add this server to the Monitor tab's profile list.\n\n"
+            "That is what connects the two halves of the app: once registered, the\n"
+            "server you just built appears in the dropdown, and the latency test,\n"
+            "tunnel indicator and health monitor all start watching it."
+        )
         self.btn_register.clicked.connect(self.on_register_profile)
         layout.addWidget(self.btn_register)
 
         self.btn_teardown = QPushButton("Tear Down")
         self.btn_teardown.setObjectName("DisconnectButton")
+        self.btn_teardown.setToolTip(
+            "Remove the VPN from the server.\n\n"
+            "Stops and disables both services, drops the NAT rules and deletes the\n"
+            "configs. Installed packages are left alone, since removing them could\n"
+            "take out something else on the box.\n\n"
+            "Every connected device loses the tunnel immediately. Your local keys\n"
+            "are kept, so you can redeploy later.\n\n"
+            "Remote servers only."
+        )
         self.btn_teardown.clicked.connect(self.on_teardown)
         layout.addWidget(self.btn_teardown)
 
@@ -396,6 +610,13 @@ class ServerTab(QWidget):
         self.output.setObjectName("DeployOutput")
         self.output.setReadOnly(True)
         self.output.setMinimumHeight(110)
+        self.output.setToolTip(
+            "Live output from the server as it is configured.\n\n"
+            "Lines prefixed [vpn-agent] come from the installer running on the host.\n"
+            "A deploy ends with a verification pass — WireGuard active, OpenVPN\n"
+            "active, forwarding on, NAT rules present. If any of those fail, the\n"
+            "reason is in this pane."
+        )
         layout.addWidget(self.output)
 
         return box
@@ -468,6 +689,7 @@ class ServerTab(QWidget):
         self.edit_lan.setText(", ".join(site.lan_routes))
         self.edit_lan.setEnabled(not site.full_tunnel)
         self.lbl_pubkey.setText(site.server_wg_public_key or "—")
+        self.lbl_pubkey.setCursorPosition(0)  # show the start, not the tail
 
         self.btn_teardown.setEnabled(site.mode == MODE_REMOTE and bool(site.last_deployed_at))
         self.lbl_state.setText(
@@ -651,6 +873,18 @@ class ServerTab(QWidget):
         provision.rotate_peer_keys(self._site, peer.name)
         self._append(f"Rotated keys for {peer.name!r}. Re-export and deploy.")
         self._refresh_peers()
+
+    def on_open_guide(self) -> None:
+        # Kept on the instance so it is not garbage-collected the moment this
+        # method returns, which is what makes a non-modal dialog flash and vanish.
+        if self._guide_dialog is None or not self._guide_dialog.isVisible():
+            self._guide_dialog = DocDialog(
+                SERVER_DOC_HTML, "BUILDING YOUR OWN VPN", parent=self
+            )
+            self._guide_dialog.show()
+        else:
+            self._guide_dialog.raise_()
+            self._guide_dialog.activateWindow()
 
     def on_show_qr(self) -> None:
         peer = self._selected_peer()

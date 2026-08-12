@@ -154,7 +154,15 @@ def _client_interface(site: Site) -> str:
 
 
 def _default_profiles_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "config" / "vpn_profiles.json"
+    """
+    The same writable profile list the Monitor tab reads.
+
+    Deliberately not the config/ copy — that one is a read-only seed that ends
+    up inside the .app bundle once frozen.
+    """
+    path = paths.profiles_file()
+    paths.ensure_private_dir(path.parent)
+    return path
 
 
 # ── Human-readable summary ───────────────────────

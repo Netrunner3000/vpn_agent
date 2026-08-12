@@ -36,7 +36,10 @@ VPN Agent is a standalone desktop app that gives you a control panel for your ow
 **What it does NOT do:**
 - It is not a commercial VPN service
 - It does not manage VPN accounts or subscriptions
-- It does not provide servers — you bring your own (VPS, home server, GL.iNet router)
+- It is not a hosting provider — you supply the machine (a rented VPS, a Raspberry Pi,
+  a GL.iNet router). The **Build Server** tab then turns that machine into a working
+  VPN server for you: see [SERVER_GUIDE.md](SERVER_GUIDE.md), or the **? Server Guide**
+  button on that tab.
 
 ---
 
@@ -167,6 +170,13 @@ Profiles are stored in `config/vpn_profiles.json`:
 ## 5. VPS Setup Guide
 
 A VPS (Virtual Private Server) is a rented Linux server that acts as your WireGuard server. Your traffic routes through it so your public IP becomes the VPS's IP.
+
+> **The app now does all of this for you.** The **Build Server** tab generates the keys,
+> writes the configs, installs both WireGuard and an OpenVPN fallback, sets up NAT and
+> verifies the result — see [SERVER_GUIDE.md](SERVER_GUIDE.md).
+>
+> This section is kept as the manual procedure: useful for understanding what the
+> installer does, or for a machine the app cannot reach over SSH.
 
 ### 5.1 Choose a Provider
 

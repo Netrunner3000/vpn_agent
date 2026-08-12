@@ -1,3 +1,11 @@
 PySide6>=6.6.0
 requests>=2.31.0
 dnspython>=2.4.0
+
+# Server side: X25519 keys for WireGuard and the OpenVPN certificate authority.
+# Generating keys locally means the wg CLI is not needed on this machine.
+cryptography>=42.0.0
+
+# QR codes for importing a WireGuard config onto a phone. Pure Python — writes
+# PNG without pulling in Pillow.
+segno>=1.6.0

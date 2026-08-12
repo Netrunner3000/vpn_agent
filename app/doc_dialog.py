@@ -1,6 +1,10 @@
 """
 doc_dialog.py — In-app documentation viewer for VPN Agent.
-Opens a resizable window showing the full HTML guide.
+Opens a resizable window showing an HTML guide.
+
+Takes the document as an argument rather than reaching for one directly: the
+app ships two guides — running tunnels, and building the servers behind them —
+and they are long enough that merging them would bury both.
 """
 
 from PySide6.QtWidgets import (
@@ -13,9 +17,12 @@ from app.doc_content import DOC_HTML
 
 
 class DocDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, html: str = DOC_HTML, heading: str = "VPN AGENT — DOCUMENTATION",
+                 parent=None):
         super().__init__(parent)
-        self.setWindowTitle("VPN Agent — Documentation")
+        self._html = html
+        self._heading = heading
+        self.setWindowTitle(heading)
         self.setMinimumSize(860, 640)
         self.resize(960, 760)
         self.setModal(False)  # non-modal so user can keep it open alongside the app
@@ -31,7 +38,7 @@ class DocDialog(QDialog):
         hl = QHBoxLayout(header)
         hl.setContentsMargins(20, 0, 16, 0)
 
-        title = QLabel("VPN AGENT — DOCUMENTATION")
+        title = QLabel(self._heading)
         title.setStyleSheet(
             "color: #00e5ff; font-size: 14px; font-weight: bold; letter-spacing: 2px;"
         )
@@ -60,7 +67,7 @@ class DocDialog(QDialog):
 
         # HTML content browser
         browser = QTextBrowser()
-        browser.setHtml(DOC_HTML)
+        browser.setHtml(self._html)
         browser.setOpenExternalLinks(True)
         browser.setStyleSheet("""
             QTextBrowser {

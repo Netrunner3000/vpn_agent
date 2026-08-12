@@ -54,6 +54,19 @@ def exports_dir(site_name: str) -> Path:
     return state_dir() / "exports" / slugify(site_name)
 
 
+def profiles_file() -> Path:
+    """
+    The client-side profile list, in a location the app may actually write to.
+
+    This file is written at runtime — selecting a profile persists it, and
+    registering a built server appends to it. The copy shipped in config/ is a
+    read-only seed: once frozen it lives inside the .app bundle, where writing
+    would break the code signature and a reinstall would silently discard every
+    profile the user had added.
+    """
+    return state_dir() / "vpn_profiles.json"
+
+
 def slugify(name: str) -> str:
     """Reduce a display name to something safe for a filename or interface."""
     out = []
