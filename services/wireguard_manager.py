@@ -9,8 +9,13 @@ Control options on macOS:
   2. WireGuard.app (manages tunnels via its own daemon — limited CLI)
   3. networksetup / scutil (system-level, not WireGuard-specific)
 
-Phase 1: This module provides status detection and placeholder connect/disconnect.
-Phase 3 will wire up real wg-quick commands once the user confirms wg-tools are installed.
+This module drives wg-quick directly, so it needs wireguard-tools present and
+sudo for anything that changes state. Every function reports a missing binary as
+an error rather than raising, because the GUI shows these results in a panel.
+
+This is the *client* side. Creating the server a tunnel connects to is the
+server/ package, which shares nothing with this module — it never shells out to
+wg at all, so a server can be built from a Mac with no WireGuard installed.
 """
 
 import subprocess

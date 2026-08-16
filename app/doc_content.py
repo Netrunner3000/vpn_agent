@@ -62,6 +62,17 @@ VPN server for you — press <b>? Server Guide</b> on that tab for the whole pro
 
 <h2><a name="dashboard"></a>2. Dashboard Reference</h2>
 
+<p>The window has two tabs:</p>
+<table>
+<tr><th>Tab</th><th>What it is for</th></tr>
+<tr><td><b>Monitor</b></td><td>Watching and controlling a tunnel from this Mac — public IP,
+DNS leaks, latency, connect/disconnect. This section documents it.</td></tr>
+<tr><td><b>Build Server</b></td><td>Creating the server at the far end of that tunnel.
+Documented separately — press <b>? Server Guide</b> on that tab.</td></tr>
+</table>
+<p>The title bar sits above both, so the tunnel indicator and any health warning stay
+visible whichever tab is open.</p>
+
 <h3>Tunnel Indicator (top right)</h3>
 <p>Shows which WireGuard interfaces are currently active on your system.</p>
 <table>
@@ -73,7 +84,7 @@ VPN server for you — press <b>? Server Guide</b> on that tab for the whole pro
 <div class="warning-box">If the indicator shows NONE when you expect a tunnel to be active, your traffic is NOT protected.</div>
 
 <h3>Active Profile Dropdown</h3>
-<p>Selects which VPN profile to use for Connect / Disconnect / Restart / Latency Test. Each profile maps to a WireGuard interface name and endpoint address. Add profiles by editing <code>config/vpn_profiles.json</code>.</p>
+<p>Selects which VPN profile to use for Connect / Disconnect / Restart / Latency Test. Each profile maps to a WireGuard interface name and endpoint address. Servers built in the Build Server tab appear here via <b>Add to Profiles</b>.</p>
 
 <h3>Public IP Panel</h3>
 <ul>
@@ -114,7 +125,7 @@ VPN server for you — press <b>? Server Guide</b> on that tab for the whole pro
 </table>
 
 <h3>Activity Log</h3>
-<p>Shows a running log of events, status changes, and warnings. Most recent entries appear at the top. The log is not saved to disk in Phase 1 — it resets each session.</p>
+<p>Shows a running log of events, status changes, and warnings. Most recent entries appear at the top. The log is not saved to disk — it resets each session.</p>
 
 <hr>
 
@@ -131,18 +142,33 @@ VPN server for you — press <b>? Server Guide</b> on that tab for the whole pro
 <pre>which wg-quick
 wg --version</pre>
 
-<h3>3.4 Activate the Python venv</h3>
-<pre>source /Users/as/Documents/lab/vpn_agent/venv/bin/activate</pre>
-<p>Do this in every new terminal tab before running the app.</p>
+<div class="tip"><code>wireguard-tools</code> is only needed to <b>connect</b> from this Mac.
+Building a server does not require it — key generation happens in Python, so you can set
+up a VPS from a machine with no WireGuard installed at all.</div>
+
+<h3>3.4 Set up the Python environment</h3>
+<p>From the project directory:</p>
+<pre>uv venv &amp;&amp; uv pip install -r requirements.txt</pre>
+<p>This pulls in PySide6, <code>cryptography</code> (WireGuard keys and the OpenVPN
+certificate authority) and <code>segno</code> (QR codes for phones).</p>
 
 <h3>3.5 Run the app</h3>
-<pre>cd /Users/as/Documents/lab/vpn_agent
+<pre>source .venv/bin/activate
 python main.py</pre>
+<p>Check a build is sound at any time — this verifies key generation, certificate
+issuance, QR rendering and the bundled assets:</p>
+<pre>python main.py --selftest</pre>
+
+<h3>3.6 Build the standalone app</h3>
+<pre>./build_app.sh --install</pre>
+<p>Produces <code>VPN Agent.app</code> and copies it to <code>/Applications</code>. The
+build runs the self-test against the packaged binary and refuses to ship a bundle that
+fails it.</p>
 
 <hr>
 
 <h2><a name="profiles"></a>4. VPN Profiles</h2>
-<p>Profiles are stored in <code>config/vpn_profiles.json</code>. Each profile maps a friendly name to a WireGuard interface and endpoint.</p>
+<p>Profiles live in <code>~/Library/Application Support/VPN Agent/vpn_profiles.json</code>, outside the app so a reinstall cannot wipe them. <code>config/vpn_profiles.json</code> in the project is the read-only seed, copied out on first run. The <b>Build Server</b> tab's <b>Add to Profiles</b> button writes here too, which is what makes a server you just built appear in the dropdown.</p>
 <pre>{
   "profiles": [
     {
@@ -507,7 +533,7 @@ netstat -rn | grep wg
 sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder</pre>
 
 <hr>
-<p style="color:#444444; font-size:11px; text-align:center;">VPN Agent — Personal VPN Control Center &nbsp;|&nbsp; Phase 1</p>
+<p style="color:#444444; font-size:11px; text-align:center;">VPN Agent — Personal VPN Control Center</p>
 
 </body>
 </html>"""

@@ -45,6 +45,16 @@ VPN Agent is a standalone desktop app that gives you a control panel for your ow
 
 ## 2. Dashboard Reference
 
+The window has two tabs:
+
+| Tab | What it is for |
+|---|---|
+| **Monitor** | Watching and controlling a tunnel from this Mac — public IP, DNS leaks, latency, connect/disconnect. This section documents it. |
+| **Build Server** | Creating the server at the far end of that tunnel. Documented separately in [SERVER_GUIDE.md](SERVER_GUIDE.md), or the **? Server Guide** button on the tab itself. |
+
+The title bar sits above both, so the tunnel indicator and any health warning stay
+visible whichever tab is open.
+
 ### Tunnel Indicator (top right)
 
 Shows which WireGuard interfaces are currently active on your system.
@@ -119,26 +129,54 @@ which wg-quick
 wg --version
 ```
 
-### 3.4 Activate the Python venv
+> `wireguard-tools` is only needed to **connect** from this Mac. Building a server
+> does not require it — key generation happens in Python, so you can set up a VPS
+> from a machine that has no WireGuard installed at all.
+
+### 3.4 Set up the Python environment
+
+From the project directory:
 
 ```bash
-source /Users/as/Documents/python_projects/vpn_agent/venv/bin/activate
+uv venv && uv pip install -r requirements.txt
 ```
 
-Do this in every new terminal tab before running the app.
+This pulls in PySide6, `cryptography` (WireGuard keys and the OpenVPN certificate
+authority) and `segno` (QR codes for phones).
 
 ### 3.5 Run the app
 
 ```bash
-cd /Users/as/Documents/python_projects/vpn_agent
+source .venv/bin/activate
 python main.py
 ```
+
+Check a build is sound at any time — this verifies key generation, certificate
+issuance, QR rendering and the bundled assets:
+
+```bash
+python main.py --selftest
+```
+
+### 3.6 Build the standalone app
+
+```bash
+./build_app.sh --install
+```
+
+Produces `VPN Agent.app` and copies it to `/Applications`. The build runs the
+self-test against the packaged binary and refuses to ship a bundle that fails it.
 
 ---
 
 ## 4. VPN Profiles
 
-Profiles are stored in `config/vpn_profiles.json`:
+Profiles live in `~/Library/Application Support/VPN Agent/vpn_profiles.json`, outside the
+app so a reinstall cannot wipe them. `config/vpn_profiles.json` in the project is the
+read-only seed, copied out on first run.
+
+The **Build Server** tab's **Add to Profiles** button writes here too, which is what makes
+a server you just built appear in the dropdown.
 
 ```json
 {
@@ -552,4 +590,4 @@ sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
 
 ---
 
-*VPN Agent — Personal VPN Control Center | Phase 1*
+*VPN Agent — Personal VPN Control Center*
