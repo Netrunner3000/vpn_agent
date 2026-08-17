@@ -76,6 +76,16 @@ def _linux_preamble(site: Site) -> str:
 set -euo pipefail
 umask 077
 
+# A note on why nothing below is written as `producer | grep -q pattern`:
+#
+# grep -q exits the moment it matches. That closes the pipe, the producer gets
+# SIGPIPE and dies with status 141, and `set -o pipefail` reports 141 for the
+# whole pipeline — so the test reads as FALSE exactly when the pattern WAS
+# found. It only bites when the producer is still writing as grep exits, which
+# is why a short producer looks fine and `systemctl list-unit-files` does not.
+#
+# Every test here captures output into a variable first and matches with `case`.
+
 log()  {{ printf '\\033[36m[vpn-agent]\\033[0m %s\\n' "$*"; }}
 warn() {{ printf '\\033[33m[vpn-agent] WARN:\\033[0m %s\\n' "$*" >&2; }}
 die()  {{ printf '\\033[31m[vpn-agent] ERROR:\\033[0m %s\\n' "$*" >&2; exit 1; }}
@@ -116,8 +126,11 @@ def _linux_packages(site: Site) -> str:
 # ── Packages ────────────────────────────────────
 missing=""
 for pkg in {package_list}; do
-    dpkg-query -W -f='${{Status}}' "$pkg" 2>/dev/null | grep -q "install ok installed" \\
-        || missing="$missing $pkg"
+    status="$(dpkg-query -W -f='${{Status}}' "$pkg" 2>/dev/null || true)"
+    case "$status" in
+        "install ok installed") ;;
+        *) missing="$missing $pkg" ;;
+    esac
 done
 
 if [ -n "$missing" ]; then
@@ -306,7 +319,11 @@ def _linux_firewall(site: Site) -> str:
     )
     return f"""
 # ── Firewall ────────────────────────────────────
-if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+ufw_state=""
+command -v ufw >/dev/null 2>&1 && ufw_state="$(ufw status 2>/dev/null || true)"
+
+case "$ufw_state" in
+*"Status: active"*)
     log "ufw is active — opening VPN ports."
     ufw allow {site.wg_port}/udp >/dev/null 2>&1 || true
 {ovpn_rule}
@@ -316,9 +333,11 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: a
         ufw reload >/dev/null 2>&1 || true
         log "ufw forward policy set to ACCEPT."
     fi
-else
+    ;;
+*)
     log "ufw not active — skipping firewall rules."
-fi
+    ;;
+esac
 """
 
 
@@ -326,7 +345,7 @@ def _linux_services(site: Site) -> str:
     ovpn_block = ""
     if site.enable_openvpn:
         ovpn_block = f"""
-if systemctl list-unit-files | grep -q '^openvpn-server@'; then
+if systemctl cat openvpn-server@.service >/dev/null 2>&1; then
     systemctl enable --quiet openvpn-server@server.service
     systemctl restart openvpn-server@server.service
     log "OpenVPN fallback restarted (TCP {site.ovpn_port})."
@@ -381,12 +400,14 @@ else
     failed=1
 fi
 
-if iptables -t nat -S POSTROUTING | grep -qF MASQUERADE; then
-    log "  NAT: masquerade rules present"
-else
+nat_rules="$(iptables -t nat -S POSTROUTING 2>/dev/null || true)"
+case "$nat_rules" in
+*MASQUERADE*)
+    log "  NAT: masquerade rules present" ;;
+*)
     warn "  NAT: no masquerade rule — clients will connect but reach nothing"
-    failed=1
-fi
+    failed=1 ;;
+esac
 
 detected_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{{ print $7; exit }}' || true)"
 [ -n "$detected_ip" ] && log "  Server egress address: $detected_ip"
