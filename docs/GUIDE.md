@@ -69,7 +69,7 @@ Shows which WireGuard interfaces are currently active on your system.
 
 ### Active Profile Dropdown
 
-Selects which VPN profile to use for Connect / Disconnect / Restart / Latency Test. Profiles are defined in `config/vpn_profiles.json`.
+Selects which VPN profile to use for Connect / Disconnect / Restart / Latency Test. Servers built in the Build Server tab appear here via **Add to Profiles**.
 
 ### Public IP Panel
 
@@ -102,6 +102,7 @@ Selects which VPN profile to use for Connect / Disconnect / Restart / Latency Te
 | Restart | Disconnect then reconnect | Same as Connect |
 | Test DNS Leak | Re-runs the DNS resolver check | Internet access |
 | Test Latency | Pings the selected profile endpoint | Network access |
+| Kill Switch | Blocks all non-tunnel traffic so a dropped tunnel fails closed | admin password |
 | Docs | Opens this guide | Nothing |
 
 ---
@@ -434,36 +435,59 @@ Watches whichever interfaces the selected profile uses. If a tunnel that was act
 
 ## 9. Kill Switch & Safety
 
-WireGuard on macOS does not include a built-in kill switch.
+WireGuard on macOS has no built-in kill switch. Without one, a tunnel that dies
+takes your protection with it *and says nothing* — macOS falls back to the ordinary
+route and your traffic carries on over your ISP, unencrypted, looking exactly like
+it did a second earlier.
 
-### What this app does
+### The Kill Switch button
 
-- Detects tunnel drops within 30 seconds
-- Shows a prominent red warning banner
-- Logs the event with details
-- Lets you reconnect with one click
+On the Monitor tab, next to the other actions. Armed, everything that is not the
+tunnel is blocked, so a dead tunnel means **no traffic** rather than **unprotected
+traffic**.
 
-### Manual kill switch via macOS PF (Advanced)
+Still allowed while armed:
+
+| Allowed | Why |
+|---|---|
+| Loopback (`lo0`) | Blocking it breaks local IPC in ways that look like unrelated app bugs |
+| The WireGuard `utun` device | That is the protected path |
+| Your VPN server's address | Otherwise the tunnel could never reconnect |
+| ICMP to that server | So the app's own latency test still works |
+| DHCP | Or the Mac loses its address when the lease expires |
+| Your local network | Printers, NAS, the router's admin page — optional |
+
+Everything else is dropped.
+
+### Things worth knowing
+
+- **It does not survive a reboot,** deliberately. A kill switch that comes back on
+  its own leaves you with no network and no explanation. Rebooting is a deliberate
+  act, so failing open there is the safer trade.
+- **Arming with no tunnel up blocks traffic immediately.** The confirmation dialog
+  says so when that is the case.
+- **A dynamic-DNS endpoint is pinned at arm time.** DNS is blocked once armed, so
+  the address is resolved first. If your home IP changes while armed, disarm and
+  re-arm.
+- Rules load into a private pf anchor (`vpn-agent-killswitch`), never the main
+  ruleset, so they can never disturb the anchors macOS ships in `/etc/pf.conf`.
+
+### If something goes wrong
+
+This is the whole recovery, and it needs neither the app nor Python:
 
 ```bash
-# Create /etc/pf-vpn-killswitch.conf:
-# Block everything by default
-block all
-# Allow loopback
-pass quick on lo0 all
-# Allow WireGuard handshake to VPS only
-pass out quick proto udp to YOUR_VPS_IP port 51820
-# Allow all traffic on the WireGuard interface
-pass quick on wg2 all
-
-# Activate:
-sudo pfctl -ef /etc/pf-vpn-killswitch.conf
-
-# Deactivate:
-sudo pfctl -d
+sudo pfctl -a vpn-agent-killswitch -F all && sudo pfctl -F all -f /etc/pf.conf
 ```
 
-> **Be careful:** If PF is active and VPN is down with the wrong VPS IP, you lose all internet access. Test with a fallback ready.
+The app prints that command every time it arms, and again on any failure.
+
+> **A warning about older versions of this guide.** This section used to suggest
+> `sudo pfctl -ef <file>` with a `pass quick on wg2` rule. Both parts are wrong on
+> macOS: `-f` against the main ruleset flushes the rules Apple loads at startup,
+> and `wg-quick` creates a `utunN` device rather than `wg2`, so that rule matches
+> nothing and the "kill switch" blocks the tunnel it is supposed to protect. Use
+> the button.
 
 ### Practical safety habits
 

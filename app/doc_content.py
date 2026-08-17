@@ -121,6 +121,7 @@ visible whichever tab is open.</p>
 <tr><td>Restart</td><td>Disconnect then reconnect — useful after config changes</td><td>Same as Connect</td></tr>
 <tr><td>Test DNS Leak</td><td>Re-runs the DNS resolver check only</td><td>Internet access</td></tr>
 <tr><td>Test Latency</td><td>Re-runs ping to the selected profile endpoint</td><td>Network access to endpoint</td></tr>
+<tr><td>Kill Switch</td><td>Blocks all non-tunnel traffic so a dropped tunnel fails closed</td><td>administrator password</td></tr>
 <tr><td>Docs</td><td>Opens this guide</td><td>Nothing</td></tr>
 </table>
 
@@ -389,33 +390,48 @@ sudo wg-quick down wg2</pre>
 <h2><a name="killswitch"></a>9. Kill Switch &amp; Safety</h2>
 <p>A kill switch blocks all internet traffic if the VPN drops, ensuring no traffic ever leaks to your ISP. WireGuard on macOS does not include a built-in kill switch.</p>
 
-<h3>9.1 What this app does</h3>
+<h3>9.1 The Kill Switch button</h3>
+<p>On the Monitor tab, next to the other actions. Armed, everything that is not the
+tunnel is blocked, so a dead tunnel means <b>no traffic</b> rather than
+<b>unprotected traffic</b>.</p>
+<p>Still allowed while armed:</p>
+<table>
+<tr><th>Allowed</th><th>Why</th></tr>
+<tr><td>Loopback (<code>lo0</code>)</td><td>Blocking it breaks local IPC in ways that look like unrelated app bugs</td></tr>
+<tr><td>The WireGuard <code>utun</code> device</td><td>That is the protected path</td></tr>
+<tr><td>Your VPN server's address</td><td>Otherwise the tunnel could never reconnect</td></tr>
+<tr><td>ICMP to that server</td><td>So the app's own latency test still works</td></tr>
+<tr><td>DHCP</td><td>Or the Mac loses its address when the lease expires</td></tr>
+<tr><td>Your local network</td><td>Printers, NAS, the router's admin page — optional</td></tr>
+</table>
+<p>Everything else is dropped. The app also still detects tunnel drops within 30
+seconds, warns, and logs the event.</p>
+
+<h3>9.2 Things worth knowing</h3>
 <ul>
-<li>Detects tunnel drops within 30 seconds and shows a warning</li>
-<li>Logs the event with a timestamp</li>
-<li>Lets you reconnect with one click</li>
+<li><b>It does not survive a reboot</b>, deliberately. A kill switch that comes back
+on its own leaves you with no network and no explanation.</li>
+<li><b>Arming with no tunnel up blocks traffic immediately.</b> The confirmation
+dialog says so when that is the case.</li>
+<li><b>A dynamic-DNS endpoint is pinned at arm time.</b> DNS is blocked once armed,
+so the address is resolved first. If your home IP changes while armed, disarm and
+re-arm.</li>
+<li>Rules load into a private pf anchor (<code>vpn-agent-killswitch</code>), never
+the main ruleset, so they cannot disturb the anchors macOS ships.</li>
 </ul>
 
-<h3>9.2 Manual kill switch via macOS PF (Advanced)</h3>
-<p>macOS has a built-in packet filter (PF) that can block traffic outside the tunnel. This is complex and requires root. A basic example:</p>
-<pre># Create /etc/pf-vpn-killswitch.conf:
-# Block everything by default
-block all
-# Allow loopback
-pass quick on lo0 all
-# Allow WireGuard handshake to VPS (replace with your VPS IP and port)
-pass out quick proto udp to YOUR_VPS_IP port 51820
-# Allow all traffic on the WireGuard interface
-pass quick on wg2 all
+<h3>9.3 If something goes wrong</h3>
+<p>This is the whole recovery, and it needs neither the app nor Python:</p>
+<pre>sudo pfctl -a vpn-agent-killswitch -F all &amp;&amp; sudo pfctl -F all -f /etc/pf.conf</pre>
+<p>The app prints that command every time it arms, and again on any failure.</p>
+<div class="warning-box"><b>A warning about older versions of this guide.</b> This
+section used to suggest <code>sudo pfctl -ef &lt;file&gt;</code> with a
+<code>pass quick on wg2</code> rule. Both are wrong on macOS: <code>-f</code> against
+the main ruleset flushes the rules Apple loads at startup, and <code>wg-quick</code>
+creates a <code>utunN</code> device rather than <code>wg2</code>, so that rule matches
+nothing and the "kill switch" blocks the tunnel it is meant to protect. Use the button.</div>
 
-# Activate:
-sudo pfctl -ef /etc/pf-vpn-killswitch.conf
-
-# Deactivate:
-sudo pfctl -d</pre>
-<div class="warning-box"><b>Be careful:</b> If you activate PF rules while the VPN is down and your VPS IP is wrong, you will lose all internet access. Keep a way to disable PF (another terminal, or physical access) before enabling.</div>
-
-<h3>9.3 Practical safety habits</h3>
+<h3>9.4 Practical safety habits</h3>
 <ul>
 <li>Check the Tunnel Indicator before any sensitive activity</li>
 <li>After connecting, always verify the Public IP changed to the VPS IP</li>

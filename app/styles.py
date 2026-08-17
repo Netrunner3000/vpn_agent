@@ -326,6 +326,24 @@ QCheckBox::indicator:checked {
     border-color: #00e5ff;
 }
 
+/* Armed kill switch. Amber rather than green: traffic is being blocked, which
+   is protective but not a neutral resting state — it should look like
+   something is deliberately switched on. */
+QPushButton#KillSwitchOn {
+    background-color: #2a1a00;
+    color: #ffb300;
+    border: 1px solid #ff9800;
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+QPushButton#KillSwitchOn:hover {
+    background-color: #3a2400;
+    color: #ffd54f;
+}
+
 QDialog {
     background-color: #0f0f0f;
 }

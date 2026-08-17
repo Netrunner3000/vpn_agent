@@ -7,7 +7,7 @@ All network calls run in background QThread workers to keep the GUI responsive.
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QGroupBox,
-    QSizePolicy, QFrame, QTabWidget,
+    QSizePolicy, QFrame, QTabWidget, QMessageBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QObject, QEvent
 from PySide6.QtWidgets import QApplication
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication
 from app.styles import DARK_STYLESHEET
 from app.doc_dialog import DocDialog
 from app.server_tab import ServerTab
-from services import public_ip, dns_check, latency, profile_store, wireguard_manager
+from services import public_ip, dns_check, latency, profile_store, wireguard_manager, killswitch
 from services.health_monitor import HealthMonitor
 
 
@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         self._init_health_monitor()  # must come before _refresh_profiles
         self._refresh_profiles()     # triggers currentTextChanged which needs _health_monitor
 
+        self._update_killswitch_indicator()
         self._log("VPN Agent started.")
         self.on_refresh()
 
@@ -365,6 +366,24 @@ class MainWindow(QMainWindow):
         )
         btn_dns.clicked.connect(self.on_dns_test)
         layout.addWidget(btn_dns)
+
+        self.btn_killswitch = QPushButton("Kill Switch: Off")
+        self.btn_killswitch.setObjectName("ActionButton")
+        self.btn_killswitch.setToolTip(
+            "Fail closed when the tunnel drops.\n\n"
+            "Off — if the tunnel dies, macOS quietly falls back to your ISP and\n"
+            "  your traffic keeps flowing, unprotected. You find out afterwards.\n\n"
+            "On  — everything except the tunnel is blocked, so a dead tunnel means\n"
+            "  no traffic rather than unprotected traffic.\n\n"
+            "Still allowed while armed: loopback, DHCP, your local network, and\n"
+            "reaching the VPN server itself (or the tunnel could never reconnect).\n\n"
+            "Does not survive a reboot — deliberately. A kill switch that comes\n"
+            "back on its own leaves you with no network and no explanation.\n\n"
+            "Needs an administrator password, and shows you the one command that\n"
+            "undoes it."
+        )
+        self.btn_killswitch.clicked.connect(self.on_toggle_killswitch)
+        layout.addWidget(self.btn_killswitch)
 
         btn_latency = QPushButton("Test Latency")
         btn_latency.setObjectName("ActionButton")
@@ -681,6 +700,115 @@ class MainWindow(QMainWindow):
         host = profile.get("endpoint", "1.1.1.1") if profile else "1.1.1.1"
         self._log(f"Testing latency to {host}…")
         self._run_in_thread(latency.measure_latency, host, on_result=self._on_latency_result)
+
+    # ── Kill switch ───────────────────────────────
+
+    def _killswitch_targets(self) -> tuple[list[str], list[tuple[str, int]]]:
+        """
+        Everything the switch must keep reachable.
+
+        Every configured profile's endpoint is exempted, not just the active
+        one, so switching servers while armed does not require disarming first.
+        """
+        endpoints: list[str] = []
+        # The OpenVPN fallback's default port is always exempted, whether or not
+        # a site is configured here. Plenty of setups have a hand-written client
+        # config and no site at all; without this, arming the switch would block
+        # the one endpoint you fall back to on a network that drops UDP.
+        allow: set[tuple[str, int]] = {("udp", 51820), ("tcp", 443)}
+
+        for profile in profile_store.get_profiles():
+            host = (profile.get("endpoint") or "").strip()
+            if host and host not in endpoints:
+                endpoints.append(host)
+            allow.add(("udp", int(profile.get("port") or 51820)))
+
+        try:
+            from server import store as site_store
+
+            for name in site_store.list_sites():
+                site = site_store.load_site(name)
+                if site.endpoint_host and site.endpoint_host not in endpoints:
+                    endpoints.append(site.endpoint_host)
+                allow.add(("udp", site.wg_port))
+                if site.enable_openvpn:
+                    allow.add(("tcp", site.ovpn_port))
+        except Exception:
+            # A site that will not load must not stop the kill switch working.
+            pass
+
+        return endpoints, sorted(allow)
+
+    def on_toggle_killswitch(self) -> None:
+        if not killswitch.is_supported():
+            self._show_warning("Kill switch needs macOS pf — not available here.")
+            return
+
+        state = killswitch.status()
+        if state.armed:
+            ok, message = killswitch.disarm()
+            self._log(message)
+            if not ok:
+                self._show_warning(message)
+            self._update_killswitch_indicator()
+            return
+
+        endpoints, allow = self._killswitch_targets()
+        if not endpoints:
+            self._show_warning(
+                "No profile endpoints configured. Arming now would block everything "
+                "including the way back to a VPN server."
+            )
+            return
+
+        # Resolve up front so the dialog names the addresses that will really be
+        # exempted, rather than the raw profile list — which still contains the
+        # shipped 0.0.0.0 placeholder until the user edits it.
+        resolved, skipped = killswitch.resolve_endpoints(endpoints)
+        if not resolved:
+            self._show_warning(
+                "No usable endpoint address. Profiles still hold placeholders "
+                f"({', '.join(skipped)}). Set a real endpoint before arming, or the "
+                "switch would block the way back to your server."
+            )
+            return
+
+        tunnels = killswitch.active_tunnel_interfaces()
+        detail = (
+            f"Tunnel to keep open: {', '.join(tunnels)}"
+            if tunnels
+            else "NO TUNNEL IS CURRENTLY UP — arming now blocks traffic immediately."
+        )
+        ignored = f"\n\nIgnoring unusable endpoints: {', '.join(skipped)}" if skipped else ""
+        confirmed = QMessageBox.question(
+            self,
+            "Arm the kill switch?",
+            f"Blocks all traffic that is not the VPN tunnel.\n\n{detail}\n\n"
+            f"Still allowed: loopback, DHCP, your local network, and reaching "
+            f"{', '.join(resolved)}.{ignored}\n\n"
+            "You will be asked for an administrator password.\n\n"
+            "If anything goes wrong, this undoes it:\n"
+            f"  {killswitch.recovery_command()}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirmed != QMessageBox.StandardButton.Yes:
+            return
+
+        ok, message = killswitch.arm(endpoints, allow)
+        self._log(message)
+        if not ok:
+            self._show_warning(message)
+        self._update_killswitch_indicator()
+
+    def _update_killswitch_indicator(self) -> None:
+        if not killswitch.is_supported():
+            self.btn_killswitch.setEnabled(False)
+            self.btn_killswitch.setText("Kill Switch: n/a")
+            return
+        armed = killswitch.status().armed
+        self.btn_killswitch.setText("Kill Switch: ON" if armed else "Kill Switch: Off")
+        self._restyle(self.btn_killswitch, "KillSwitchOn" if armed else "ActionButton")
 
     def present(self) -> None:
         """

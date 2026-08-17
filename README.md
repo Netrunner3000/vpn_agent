@@ -3,8 +3,9 @@
 A PySide6 desktop app for running a VPN you own end to end. It has two halves:
 
 - **Monitor** — watches a tunnel from this Mac: public IP, DNS leaks, latency,
-  packet loss, connect / disconnect / restart, and a background health monitor
-  that warns when a tunnel drops.
+  packet loss, connect / disconnect / restart, a background health monitor that
+  warns when a tunnel drops, and a **kill switch** that makes a dropped tunnel
+  fail closed instead of silently reverting to your ISP.
 - **Build Server** — creates the server at the far end of that tunnel. Generates
   the keys, renders the configs, installs **WireGuard** and an **OpenVPN
   TCP/443 fallback** on a target host, sets up NAT, and verifies the result.
@@ -37,6 +38,27 @@ looks like web browsing. Hotel wifi, corporate guest networks and some airports
 block UDP outright, and there WireGuard simply cannot connect. Port 443 plus
 `tls-crypt` means a scanner probing the port gets no OpenVPN handshake to
 fingerprint. It is slower — reach for it only when the tunnel will not come up.
+
+## Kill switch
+
+Without one, a tunnel that dies takes your protection with it and says nothing:
+macOS falls back to the ordinary route and traffic carries on over your ISP,
+unencrypted, looking exactly as it did a second earlier.
+
+Armed, everything that is not the tunnel is blocked — so a dead tunnel means no
+traffic rather than unprotected traffic. Loopback, DHCP, your LAN, and reaching
+the VPN server itself stay open, the last so the tunnel can always reconnect.
+
+Rules load into a private pf anchor, never the main ruleset, so they cannot
+disturb the anchors macOS ships. It deliberately **does not survive a reboot** —
+a kill switch that comes back on its own leaves you with no network and no
+explanation.
+
+Recovery needs neither the app nor Python, and is printed every time it arms:
+
+```bash
+sudo pfctl -a vpn-agent-killswitch -F all && sudo pfctl -F all -f /etc/pf.conf
+```
 
 ## Where the keys live
 
