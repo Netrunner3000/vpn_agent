@@ -116,6 +116,31 @@ and refuses to ship a bundle that fails it:
 ./build_app.sh --install
 ```
 
+## Tests
+
+```bash
+uv pip install -r requirements-dev.txt
+pytest
+```
+
+133 tests, well under a second — no network, no server, no Qt. Every test runs
+against a throwaway state directory, so the suite can never touch the real site
+files and their keys.
+
+Several assertions are regression guards for bugs that actually shipped, and
+each was verified by reintroducing the bug and confirming the test fails:
+
+| Guard | The bug it caught |
+|---|---|
+| `test_unit_detection_does_not_use_a_pipeline` | `\| grep -q` under `set -o pipefail` inverts its result via SIGPIPE — OpenVPN was skipped on a host where it was installed |
+| `test_openvpn_blocks_ipv6_on_a_v4_only_full_tunnel` | pushing `redirect-gateway ipv6` into a tunnel with no IPv6 address black-holed client v6 traffic |
+| `test_protocols_are_paired_with_their_own_ports` | the kill switch opened TCP/51820 and UDP/443, holes serving nothing |
+| `test_icmp_to_the_endpoint_stays_open` | arming the kill switch made the app report its own server unreachable |
+
+The RFC 7748 vector in `test_keys.py` is the load-bearing one: it proves the
+app's X25519 output is byte-identical to `wg pubkey`. If that ever breaks, every
+key ever generated is wrong and no tunnel handshakes.
+
 ## Command line
 
 Everything the GUI does is scriptable, sharing the same site files:
@@ -143,7 +168,8 @@ server/     the server-building engine, no Qt dependency
   bootstrap.py  generates the installer script
   deploy.py     streams it over SSH, or runs it locally
   cli.py        command-line front end
-services/   client-side monitoring — public IP, DNS, latency, health
+services/   client-side — public IP, DNS, latency, health, kill switch
+tests/      pytest suite, incl. regression guards for shipped bugs
 docs/       GUIDE.md (Monitor), SERVER_GUIDE.md (Build Server)
 ```
 
