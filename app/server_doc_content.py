@@ -25,8 +25,10 @@ you rent or own.</p>
 <li><a href="#getserver">Getting a server</a></li>
 <li><a href="#build">Building it, step by step</a></li>
 <li><a href="#deliver">Getting configs onto devices</a></li>
+<li><a href="#status">Seeing who is connected</a></li>
 <li><a href="#devices">Adding and removing devices</a></li>
 <li><a href="#keys">Where your keys live</a></li>
+<li><a href="#backup">Backing up your keys</a></li>
 <li><a href="#installer">What the installer actually does</a></li>
 <li><a href="#cli">Running it from the command line</a></li>
 <li><a href="#trouble">Troubleshooting</a></li>
@@ -237,7 +239,20 @@ somebody else's storage. AirDrop, a USB stick, or the QR code are all better.
 
 <hr>
 
-<h2><a name="devices"></a>6. Adding and removing devices</h2>
+<h2><a name="status"></a>6. Seeing who is connected</h2>
+<p><b>Status</b> asks the server what it is actually doing, rather than what you last
+told it to do. For each device: when it last handshaked, how much it has transferred,
+and which address it is connecting from.</p>
+<p>WireGuard is connectionless, so "connected" really means "handshaked recently" —
+an active device rekeys about every two minutes, so anything quiet for more than about
+three minutes has gone away. The device list marks these ● and ○.</p>
+<p>It also warns if the server has peers this app does not know about, which means the
+server and your local state have drifted — redeploy to bring them back in line.</p>
+<p class="note">Remote servers only.</p>
+
+<hr>
+
+<h2><a name="devices"></a>7. Adding and removing devices</h2>
 
 <p>Every change here is local until you <b>Deploy</b>. That is the step that rewrites
 the server.</p>
@@ -260,7 +275,7 @@ deploy immediately</b> — that is the moment access is actually cut.
 
 <hr>
 
-<h2><a name="keys"></a>7. Where your keys live</h2>
+<h2><a name="keys"></a>8. Where your keys live</h2>
 
 <p>Site state — every private key, the certificate authority, and the device list — is
 stored at:</p>
@@ -295,7 +310,32 @@ and cannot impersonate your site after you rebuild it.</p>
 
 <hr>
 
-<h2><a name="installer"></a>8. What the installer actually does</h2>
+<h2><a name="backup"></a>9. Backing up your keys</h2>
+<p>The site file is the only copy of the server key and the certificate authority.
+<b>Backup</b> writes an encrypted copy of the whole site — keys, CA, and every
+device.</p>
+<ul>
+<li>Encrypted with a passphrase you choose: scrypt to derive the key, AES-256-GCM to
+seal it. scrypt is memory-hard, so a stolen backup cannot be attacked with cheap
+parallel hardware.</li>
+<li><b>The passphrase is never stored.</b> Lose it and the backup is as gone as the
+original.</li>
+<li>The file authenticates as well as encrypts, so a corrupted or altered backup is
+refused rather than restoring a subtly wrong site.</li>
+<li>The header — which site, which format version — is readable without the
+passphrase, so you can identify a file before opening it.</li>
+</ul>
+<p><b>Restore</b> brings back the keys, the CA and every device, so the configs
+already on your phones keep working. It refuses to overwrite an existing server of the
+same name unless you confirm, because replacing its keys invalidates every config
+issued from it.</p>
+<div class="tip">This is the supported way to carry a server to another machine.
+Copying the raw site file works too, but leaves an unprotected CA key sitting wherever
+you copied it.</div>
+
+<hr>
+
+<h2><a name="installer"></a>10. What the installer actually does</h2>
 
 <p>Press <b>Save Installer Script</b> to read the exact script before letting it near a
 server. It is plain bash and it is meant to be read.</p>
@@ -327,7 +367,7 @@ removing them could take out something else on the box.</p>
 
 <hr>
 
-<h2><a name="cli"></a>9. Running it from the command line</h2>
+<h2><a name="cli"></a>11. Running it from the command line</h2>
 
 <p>Everything the GUI does is available from a terminal, which makes it scriptable:</p>
 <pre>python -m server.cli init "Berlin VPS" --mode remote --host 1.2.3.4 --ssh root@1.2.3.4
@@ -342,13 +382,16 @@ python -m server.cli show "Berlin VPS"
 python -m server.cli script "Berlin VPS"
 python -m server.cli deploy "Berlin VPS" --dry-run
 python -m server.cli peer rotate "Berlin VPS" iphone
+python -m server.cli status "Berlin VPS"
+python -m server.cli backup "Berlin VPS" --out ~/berlin.vpnbackup
+python -m server.cli restore ~/berlin.vpnbackup
 python -m server.cli teardown "Berlin VPS"</pre>
 
 <p>The GUI and CLI share the same site files, so you can move between them freely.</p>
 
 <hr>
 
-<h2><a name="trouble"></a>10. Troubleshooting</h2>
+<h2><a name="trouble"></a>12. Troubleshooting</h2>
 
 <h3>"Permission denied (publickey)"</h3>
 <p>The server will not accept your SSH key.</p>
@@ -394,7 +437,7 @@ at all. The third cannot be fixed from this end — you need a VPS.</p>
 
 <hr>
 
-<h2><a name="limits"></a>11. Honest limitations</h2>
+<h2><a name="limits"></a>13. Honest limitations</h2>
 
 <p><b>A self-hosted VPN is not anonymity.</b> Your VPS is rented in your name and paid
 with your card. It hides your traffic from your ISP and your IP from the sites you
@@ -412,12 +455,9 @@ document because it is the most common misunderstanding.</p>
 <p><b>macOS is a poor always-on server.</b> It sleeps, <code>pf</code> state is cleared
 by some system updates, and the tunnel drops with the lid. The macOS installer also
 appends to <code>/etc/pf.conf</code>, which Apple owns and system updates overwrite —
-you must re-run it after a major macOS update. A €50 Raspberry Pi is genuinely the
+the app notices this and warns you on the next launch, but you still have to deploy
+again to fix it. A €50 Raspberry Pi is genuinely the
 better home server.</p>
-
-<p><b>Teardown is Linux-only.</b> For a native macOS install, remove the
-<code>vpn-agent</code> block from <code>/etc/pf.conf</code> and run
-<code>sudo wg-quick down</code> yourself.</p>
 
 <p><b>The installer has not been run against every distro.</b> It targets Debian and
 Ubuntu and checks for <code>apt-get</code> before doing anything. On anything else it

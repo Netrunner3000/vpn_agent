@@ -17,12 +17,14 @@ you rent or own.
 3. [Getting a server](#3-getting-a-server)
 4. [Building it, step by step](#4-building-it-step-by-step)
 5. [Getting configs onto devices](#5-getting-configs-onto-devices)
-6. [Adding and removing devices](#6-adding-and-removing-devices)
-7. [Where your keys live](#7-where-your-keys-live)
-8. [What the installer actually does](#8-what-the-installer-actually-does)
-9. [Running it from the command line](#9-running-it-from-the-command-line)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Honest limitations](#11-honest-limitations)
+6. [Seeing who is connected](#6-seeing-who-is-connected)
+7. [Adding and removing devices](#7-adding-and-removing-devices)
+8. [Where your keys live](#8-where-your-keys-live)
+9. [Backing up your keys](#9-backing-up-your-keys)
+10. [What the installer actually does](#10-what-the-installer-actually-does)
+11. [Running it from the command line](#11-running-it-from-the-command-line)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Honest limitations](#13-honest-limitations)
 
 ---
 
@@ -140,7 +142,7 @@ ssh root@YOUR_SERVER_IP
   power, always on, cheap.
 - Your **router** may already do this. A GL.iNet Flint 2 has a WireGuard server built
   into its firmware, and using that is simpler than anything here.
-- **This Mac** works, but see [Honest limitations](#11-honest-limitations) — a laptop
+- **This Mac** works, but see [Honest limitations](#13-honest-limitations) — a laptop
   that sleeps is a poor always-on server.
 
 For a home server to be reachable from outside you also need to forward the port on
@@ -241,7 +243,24 @@ If the IP did not change, the tunnel is up but not routing — check the
 
 ---
 
-## 6. Adding and removing devices
+## 6. Seeing who is connected
+
+**Status** asks the server what it is actually doing, rather than what you last told
+it to do. For each device: when it last handshaked, how much it has transferred, and
+which address it is connecting from.
+
+WireGuard is connectionless, so "connected" really means "handshaked recently" — an
+active device rekeys about every two minutes, so anything quiet for more than about
+three minutes has gone away. The device list marks these ● and ○.
+
+It also warns if the server has peers this app does not know about, which means the
+server and your local state have drifted — redeploy to bring them back in line.
+
+Remote servers only.
+
+---
+
+## 7. Adding and removing devices
 
 Every change here is local until you **Deploy**. That is the step that rewrites the
 server.
@@ -259,7 +278,7 @@ server.
 
 ---
 
-## 7. Where your keys live
+## 8. Where your keys live
 
 Site state — every private key, the certificate authority, and the device list — is
 stored at:
@@ -301,7 +320,37 @@ cannot impersonate your site after you rebuild it.
 
 ---
 
-## 8. What the installer actually does
+## 9. Backing up your keys
+
+The site file is the only copy of the server key and the certificate authority.
+**Backup** writes an encrypted copy of the whole site — keys, CA, and every device.
+
+- Encrypted with a passphrase you choose: scrypt to derive the key, AES-256-GCM to
+  seal it. scrypt is memory-hard, so a stolen backup cannot be attacked with cheap
+  parallel hardware.
+- **The passphrase is never stored.** Lose it and the backup is as gone as the
+  original.
+- The file authenticates as well as encrypts, so a corrupted or altered backup is
+  refused rather than restoring a subtly wrong site.
+- The header — which site, which format version — is readable without the
+  passphrase, so you can identify a file before opening it.
+
+**Restore** brings back the keys, the CA and every device, so the configs already on
+your phones keep working. It refuses to overwrite an existing server of the same
+name unless you confirm, because replacing its keys invalidates every config issued
+from it.
+
+This is the supported way to carry a server to another machine. Copying the raw site
+file works too, but leaves an unprotected CA key sitting wherever you copied it.
+
+```bash
+python -m server.cli backup "Berlin VPS" --out ~/berlin.vpnbackup
+python -m server.cli restore ~/berlin.vpnbackup
+```
+
+---
+
+## 10. What the installer actually does
 
 Press **Save Installer Script** to read the exact script before letting it near a
 server. It is plain bash and it is meant to be read.
@@ -335,7 +384,7 @@ them could take out something else on the box.
 
 ---
 
-## 9. Running it from the command line
+## 11. Running it from the command line
 
 Everything the GUI does is available from a terminal, which makes it scriptable:
 
@@ -362,7 +411,7 @@ The GUI and CLI share the same site files, so you can move between them freely.
 
 ---
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 ### "Permission denied (publickey)"
 
@@ -422,7 +471,7 @@ cannot accept inbound connections — you need a VPS.
 
 ---
 
-## 11. Honest limitations
+## 13. Honest limitations
 
 **A self-hosted VPN is not anonymity.** Your VPS is rented in your name and paid with
 your card. It hides your traffic from your ISP and your IP from the sites you visit.
@@ -438,11 +487,9 @@ document because it is the most common misunderstanding.
 
 **macOS is a poor always-on server.** It sleeps, `pf` state is cleared by some system
 updates, and the tunnel drops with the lid. The macOS installer also appends to
-`/etc/pf.conf`, which Apple owns and system updates overwrite — you must re-run it
-after a major macOS update. A €50 Raspberry Pi is genuinely the better home server.
-
-**Teardown is Linux-only.** For a native macOS install, remove the `vpn-agent` block
-from `/etc/pf.conf` and run `sudo wg-quick down` yourself.
+`/etc/pf.conf`, which Apple owns and system updates overwrite — the app notices this
+and warns you on the next launch, but you still have to deploy again to fix it. A €50
+Raspberry Pi is genuinely the better home server.
 
 **The installer has not been run against every distro.** It targets Debian and Ubuntu
 and checks for `apt-get` before doing anything. On anything else it stops rather than

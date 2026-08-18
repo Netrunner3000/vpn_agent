@@ -13,11 +13,12 @@ scriptable and testable without a display.
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 from pathlib import Path
 
 from . import deploy as deploy_mod
-from . import export, paths, provision, store
+from . import backup, export, paths, provision, store
 from .model import MODE_NATIVE, MODE_REMOTE, MODES
 
 
@@ -147,6 +148,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
     p.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     p.set_defaults(handler=_cmd_teardown)
+
+    # status
+    p = sub.add_parser("status", help="ask the server which devices are connected")
+    p.add_argument("name")
+    p.set_defaults(handler=_cmd_status)
+
+    # backup
+    p = sub.add_parser("backup", help="write an encrypted backup of a site")
+    p.add_argument("name")
+    p.add_argument("--out", help="output file (default: alongside the site state)")
+    p.set_defaults(handler=_cmd_backup)
+
+    # restore
+    p = sub.add_parser("restore", help="restore a site from an encrypted backup")
+    p.add_argument("file")
+    p.add_argument("--overwrite", action="store_true",
+                   help="replace an existing site of the same name")
+    p.set_defaults(handler=_cmd_restore)
 
     # delete
     p = sub.add_parser("delete", help="delete local site state including all keys")
@@ -396,6 +415,99 @@ def _cmd_delete(args) -> int:
         return 0
     print(f"No site named {args.name!r}", file=sys.stderr)
     return 1
+
+
+def _cmd_status(args) -> int:
+    site = store.load_site(args.name)
+    status = deploy_mod.server_status(site)
+
+    if not status.reachable:
+        print(status.summary(), file=sys.stderr)
+        return 1
+
+    print(status.summary())
+    if not status.peers:
+        print("\n(no peers configured on the server)")
+        return 0
+
+    print(f"\n{'DEVICE':<22} {'HANDSHAKE':<12} {'TRANSFER':<26} ENDPOINT")
+    for peer in status.peers:
+        mark = "*" if peer.connected else " "
+        print(f"{mark}{peer.name:<21} {peer.describe_handshake():<12} "
+              f"{peer.describe_transfer():<26} {peer.endpoint or '-'}")
+    print("\n* = handshaked within the last ~3 minutes")
+    return 0
+
+
+def _cmd_backup(args) -> int:
+    site = store.load_site(args.name)
+
+    passphrase = _ask_passphrase(confirm=True)
+    if passphrase is None:
+        return 1
+
+    target = Path(args.out).expanduser() if args.out else (
+        paths.state_dir() / f"{paths.slugify(site.name)}{backup.SUFFIX}"
+    )
+    written = backup.write_backup(site, passphrase, target)
+
+    print(f"Wrote {written}")
+    print("Holds the server key and the certificate authority, encrypted.")
+    print("Without the passphrase it cannot be opened — including by you.")
+    return 0
+
+
+def _cmd_restore(args) -> int:
+    path = Path(args.file).expanduser()
+    if not path.is_file():
+        print(f"No such file: {path}", file=sys.stderr)
+        return 1
+
+    try:
+        info = backup.describe(path.read_bytes())
+    except backup.BackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Backup of site {info['site']!r} (format v{info['version']})")
+
+    passphrase = _ask_passphrase(confirm=False)
+    if passphrase is None:
+        return 1
+
+    try:
+        site = backup.restore(path, passphrase, overwrite=args.overwrite)
+    except backup.BackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Restored {site.name!r} with {len(site.peers)} peer(s).")
+    print("Deploy it to make the server match this state again.")
+    return 0
+
+
+def _ask_passphrase(*, confirm: bool) -> str | None:
+    """
+    Read a passphrase without echoing it.
+
+    getpass reads from the terminal directly, so the passphrase never reaches
+    the shell history, the process list, or any log.
+    """
+    try:
+        passphrase = getpass.getpass("Passphrase: ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    if not passphrase:
+        print("Empty passphrase — aborting.", file=sys.stderr)
+        return None
+
+    if confirm:
+        for problem in backup.passphrase_problems(passphrase):
+            print(f"warning: {problem}", file=sys.stderr)
+        if getpass.getpass("Repeat: ") != passphrase:
+            print("Passphrases do not match.", file=sys.stderr)
+            return None
+    return passphrase
 
 
 # ── Helpers ──────────────────────────────────────

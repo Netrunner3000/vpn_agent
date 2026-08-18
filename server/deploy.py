@@ -16,6 +16,7 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+import time
 import threading
 from dataclasses import dataclass, field
 from typing import Callable
@@ -315,7 +316,13 @@ def build_teardown_script(site: Site) -> str:
     Stops and disables both services, removes the NAT unit and its rules, and
     deletes the configs. Packages are left installed — removing them could take
     out something else on the box that depends on them.
+
+    A native macOS install is a different animal — pf and Homebrew rather than
+    systemd and apt — so it gets its own script.
     """
+    if site.mode == MODE_NATIVE and platform.system() == "Darwin":
+        return bootstrap.macos_teardown_script(site)
+
     ovpn = ""
     if site.enable_openvpn:
         ovpn = """
@@ -347,18 +354,189 @@ echo "[vpn-agent] Teardown complete. Packages were left installed."
 
 
 def teardown(site: Site, *, on_output: OutputCallback | None = None) -> DeployResult:
-    """Remove the VPN server from its host. Does not delete local site state."""
-    if site.mode != MODE_REMOTE:
-        return DeployResult(
-            False,
-            problems=[
-                "Teardown is implemented for remote (Linux) hosts only. For a native "
-                "macOS install, remove the pf anchor block from /etc/pf.conf and run "
-                "`sudo wg-quick down` manually."
-            ],
-        )
+    """
+    Remove the VPN server from its host. Does not delete local site state.
+
+    Native installs tear down locally; remote ones over SSH. The macOS path cuts
+    our block out of /etc/pf.conf by marker rather than rewriting the file, so
+    Apple's own anchors survive untouched.
+    """
     script = build_teardown_script(site)
-    command = _ssh_command(site) + (
-        ["bash -s"] if site.ssh.user == "root" else ["sudo -n bash -s"]
+
+    if site.mode == MODE_REMOTE:
+        command = _ssh_command(site) + (
+            ["bash -s"] if site.ssh.user == "root" else ["sudo -n bash -s"]
+        )
+        return _stream(command, script, on_output)
+
+    system = platform.system()
+    if system not in ("Darwin", "Linux"):
+        return DeployResult(False, problems=[f"Native teardown is not supported on {system}."])
+
+    import os
+
+    command = ["bash", "-s"] if os.geteuid() == 0 else ["sudo", "-n", "bash", "-s"]
+    result = _stream(command, script, on_output)
+    if not result.success and "password" in result.error.lower():
+        result.problems.append(
+            "sudo needs a password and none is cached. Run `sudo -v` in a terminal "
+            "first, then tear down again."
+        )
+    return result
+
+
+# ── Live status ──────────────────────────────────
+
+
+@dataclass
+class PeerStatus:
+    """What the server currently knows about one peer."""
+
+    public_key: str
+    name: str = ""                      # filled in by matching against the site
+    endpoint: str = ""
+    allowed_ips: str = ""
+    last_handshake: int = 0             # unix seconds; 0 means never
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+
+    @property
+    def connected(self) -> bool:
+        """
+        WireGuard is connectionless, so "connected" is really "handshaked
+        recently". A peer rekeys every two minutes while active, so a handshake
+        older than about three minutes means the device has gone away.
+        """
+        return 0 < self.seconds_since_handshake() < 190
+
+    def seconds_since_handshake(self) -> int:
+        if not self.last_handshake:
+            return 0
+        return max(0, int(time.time()) - self.last_handshake)
+
+    def describe_handshake(self) -> str:
+        if not self.last_handshake:
+            return "never"
+        seconds = self.seconds_since_handshake()
+        if seconds < 60:
+            return f"{seconds}s ago"
+        if seconds < 3600:
+            return f"{seconds // 60}m ago"
+        if seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        return f"{seconds // 86400}d ago"
+
+    def describe_transfer(self) -> str:
+        return f"{_human_bytes(self.rx_bytes)} in / {_human_bytes(self.tx_bytes)} out"
+
+
+@dataclass
+class ServerStatus:
+    reachable: bool = False
+    wg_active: bool = False
+    ovpn_active: bool = False
+    uptime: str = ""
+    peers: list[PeerStatus] = field(default_factory=list)
+    error: str = ""
+
+    def summary(self) -> str:
+        if not self.reachable:
+            return self.error or "Server unreachable."
+        parts = [f"WireGuard {'up' if self.wg_active else 'DOWN'}"]
+        if self.ovpn_active:
+            parts.append("OpenVPN up")
+        live = sum(1 for p in self.peers if p.connected)
+        parts.append(f"{live}/{len(self.peers)} device(s) connected")
+        if self.uptime:
+            parts.append(self.uptime)
+        return " · ".join(parts)
+
+
+def _human_bytes(count: int) -> str:
+    value = float(count)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GiB"
+
+
+def server_status(site: Site) -> ServerStatus:
+    """
+    Ask the server what it is actually doing.
+
+    Deploying tells you the configuration was written; this tells you which
+    devices have since handshaked and how much they have moved. The two are
+    different questions and only this one answers "is my phone still connected".
+    """
+    if site.mode != MODE_REMOTE:
+        return ServerStatus(error="Live status is available for remote servers only.")
+    if not site.ssh.is_configured():
+        return ServerStatus(error="No SSH host configured.")
+
+    probe = (
+        f"wg show {site.wg_interface} dump 2>/dev/null; "
+        "echo '--MARK--'; "
+        "systemctl is-active openvpn-server@server 2>/dev/null || true; "
+        "echo '--MARK--'; "
+        "uptime -p 2>/dev/null || true"
     )
-    return _stream(command, script, on_output)
+    command = _ssh_command(site) + [probe]
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return ServerStatus(error=f"Timed out talking to {site.ssh.destination()}.")
+    except OSError as exc:
+        return ServerStatus(error=str(exc))
+
+    if proc.returncode != 0:
+        return ServerStatus(error=_explain_failure(proc.returncode, proc.stdout + proc.stderr))
+
+    wg_text, ovpn_text, uptime_text = (proc.stdout.split("--MARK--") + ["", "", ""])[:3]
+    status = parse_wg_dump(wg_text)
+    status.reachable = True
+    status.ovpn_active = ovpn_text.strip() == "active"
+    status.uptime = uptime_text.strip()
+
+    # Attach the names the user actually recognises.
+    by_key = {p.wg_public_key: p.name for p in site.peers}
+    for peer in status.peers:
+        peer.name = by_key.get(peer.public_key, "(unknown peer)")
+
+    return status
+
+
+def parse_wg_dump(text: str) -> ServerStatus:
+    """
+    Parse `wg show <iface> dump`.
+
+    The first line describes the interface and its SECOND field is the server's
+    private key. It is dropped here and never stored or returned — a status
+    display has no use for it, and anything that holds it can impersonate the
+    server.
+
+    Peer lines are: public_key, preshared_key, endpoint, allowed_ips,
+    latest_handshake, rx, tx, keepalive.
+    """
+    status = ServerStatus()
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    if not lines:
+        return status
+
+    status.wg_active = True
+    for line in lines[1:]:                       # line 0 is the interface
+        fields = line.split("\t")
+        if len(fields) < 7:
+            continue
+        status.peers.append(
+            PeerStatus(
+                public_key=fields[0],
+                # fields[1] is the pre-shared key — deliberately not kept.
+                endpoint="" if fields[2] == "(none)" else fields[2],
+                allowed_ips=fields[3],
+                last_handshake=int(fields[4]) if fields[4].isdigit() else 0,
+                rx_bytes=int(fields[5]) if fields[5].isdigit() else 0,
+                tx_bytes=int(fields[6]) if fields[6].isdigit() else 0,
+            )
+        )
+    return status

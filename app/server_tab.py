@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 from app.doc_dialog import DocDialog
 from app.server_doc_content import SERVER_DOC_HTML
 from server import deploy as deploy_mod
-from server import export, paths, provision, store
+from server import backup, bootstrap, export, paths, provision, store
 from server.model import MODE_NATIVE, MODE_REMOTE, Site
 
 
@@ -197,6 +197,7 @@ class ServerTab(QWidget):
         self._threads: list[QThread] = []
         self._busy = False
         self._guide_dialog = None
+        self._live_status: dict = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -584,6 +585,47 @@ class ServerTab(QWidget):
         self.btn_register.clicked.connect(self.on_register_profile)
         layout.addWidget(self.btn_register)
 
+        self.btn_status = QPushButton("Status")
+        self.btn_status.setObjectName("ActionButton")
+        self.btn_status.setToolTip(
+            "Ask the server which devices are actually connected.\n\n"
+            "Deploying tells you the configuration was written; this tells you what\n"
+            "has happened since — when each device last handshaked, how much it has\n"
+            "transferred, and which address it is connecting from.\n\n"
+            "WireGuard is connectionless, so 'connected' means 'handshaked in the\n"
+            "last few minutes'. An active device rekeys every two minutes.\n\n"
+            "Remote servers only."
+        )
+        self.btn_status.clicked.connect(self.on_status)
+        layout.addWidget(self.btn_status)
+
+        self.btn_backup = QPushButton("Backup…")
+        self.btn_backup.setObjectName("ActionButton")
+        self.btn_backup.setToolTip(
+            "Write an encrypted backup of this server's keys.\n\n"
+            "The site file is the ONLY copy of the server key and the certificate\n"
+            "authority. Lose it and every config you have issued is permanently\n"
+            "dead, with no way to reissue one.\n\n"
+            "Encrypted with a passphrase you choose (scrypt + AES-256-GCM). The\n"
+            "passphrase is never stored — lose it and the backup is gone too.\n\n"
+            "Use this before reinstalling, or to carry a server to another machine."
+        )
+        self.btn_backup.clicked.connect(self.on_backup)
+        layout.addWidget(self.btn_backup)
+
+        self.btn_restore = QPushButton("Restore…")
+        self.btn_restore.setObjectName("ActionButton")
+        self.btn_restore.setToolTip(
+            "Restore a server from an encrypted backup.\n\n"
+            "Brings back the keys, the certificate authority and every device, so\n"
+            "the configs already on your phones keep working.\n\n"
+            "Refuses to overwrite an existing server of the same name unless you\n"
+            "confirm — replacing its keys would invalidate every config issued\n"
+            "from it."
+        )
+        self.btn_restore.clicked.connect(self.on_restore)
+        layout.addWidget(self.btn_restore)
+
         self.btn_teardown = QPushButton("Tear Down")
         self.btn_teardown.setObjectName("DisconnectButton")
         self.btn_teardown.setToolTip(
@@ -643,6 +685,8 @@ class ServerTab(QWidget):
             self._load_site(name)
 
     def _load_site(self, name: str) -> None:
+        # Handshake ages belong to the site they were read from.
+        self._live_status = {}
         try:
             self._site = store.load_site(name)
         except store.InsecurePermissions as exc:
@@ -691,12 +735,38 @@ class ServerTab(QWidget):
         self.lbl_pubkey.setText(site.server_wg_public_key or "—")
         self.lbl_pubkey.setCursorPosition(0)  # show the start, not the tail
 
-        self.btn_teardown.setEnabled(site.mode == MODE_REMOTE and bool(site.last_deployed_at))
+        self.btn_teardown.setEnabled(bool(site.last_deployed_at))
+        self.btn_status.setEnabled(site.mode == MODE_REMOTE)
+        self._warn_if_pf_registration_lost(site)
         self.lbl_state.setText(
             f"Deployed {site.last_deployed_at}" if site.last_deployed_at
             else "Never deployed"
         )
         self._refresh_peers()
+
+    def _warn_if_pf_registration_lost(self, site) -> None:
+        """
+        A macOS update rewrites /etc/pf.conf and drops our anchor with it.
+
+        The failure is quiet and confusing: WireGuard still starts, the
+        handshake still completes, and nothing routes, because NAT is gone. The
+        tunnel looks healthy right up until you try to use it. Say so instead.
+        """
+        import platform as _platform
+
+        if site.mode != MODE_NATIVE or not site.last_deployed_at:
+            return
+        if _platform.system() != "Darwin":
+            return
+        if bootstrap.pf_conf_has_marker():
+            return
+
+        self._append(
+            "WARNING: this Mac's /etc/pf.conf no longer contains the VPN Agent "
+            "block. A macOS update almost certainly rewrote it.\n"
+            "   NAT is gone, so the tunnel will connect and carry nothing. "
+            "Deploy again to restore it."
+        )
 
     def _refresh_peers(self) -> None:
         self.list_peers.clear()
@@ -706,6 +776,12 @@ class ServerTab(QWidget):
 
         for peer in self._site.peers:
             flags = [peer.ip4]
+            live = self._live_status.get(peer.name)
+            if live is not None:
+                flags.append(
+                    f"● {live.describe_handshake()}" if live.connected
+                    else f"○ {live.describe_handshake()}"
+                )
             if peer.has_openvpn:
                 flags.append("ovpn")
             if not peer.enabled:
@@ -981,6 +1057,131 @@ class ServerTab(QWidget):
         self._append("Tearing down…")
         self._start(deploy_mod.teardown, site, label="teardown")
 
+    def on_status(self) -> None:
+        site = self._site
+        if site is None:
+            return
+        if site.mode != MODE_REMOTE:
+            self._warn("Not available", "Live status works for remote servers only.")
+            return
+        self.output.clear()
+        self._append(f"Asking {site.ssh.destination()} what it is doing…")
+        self._start(self._fetch_status, site, label="status")
+
+    @staticmethod
+    def _fetch_status(site, on_output=None):
+        """Runs on a worker thread; _start passes on_output to every callable."""
+        return deploy_mod.server_status(site)
+
+    def _show_status(self, status) -> None:
+        self._live_status = {p.name: p for p in status.peers}
+        self._append(status.summary())
+
+        if status.peers:
+            self._append("")
+            for peer in status.peers:
+                mark = "●" if peer.connected else "○"
+                self._append(
+                    f"  {mark} {peer.name:<18} {peer.describe_handshake():<12}"
+                    f"{peer.describe_transfer():<26}{peer.endpoint or '-'}"
+                )
+            self._append("\n  ● connected (handshaked within ~3 minutes)   ○ idle")
+
+        known = {p.name for p in self._site.peers} if self._site else set()
+        strangers = [p.name for p in status.peers if p.name not in known]
+        if strangers:
+            self._append(
+                f"\n  WARNING: the server has peer(s) this app does not know about: "
+                f"{', '.join(strangers)}. Redeploy to bring it back in line."
+            )
+        self._refresh_peers()
+
+    def on_backup(self) -> None:
+        site = self._site
+        if site is None:
+            return
+
+        passphrase = self._ask_passphrase("Choose a passphrase for this backup:")
+        if passphrase is None:
+            return
+        problems = backup.passphrase_problems(passphrase)
+        if problems and not self._confirm(
+            "Weak passphrase", "\n".join(problems) + "\n\nUse it anyway?"
+        ):
+            return
+        again = self._ask_passphrase("Repeat the passphrase:")
+        if again is None:
+            return
+        if again != passphrase:
+            self._warn("Passphrases differ", "The two entries did not match.")
+            return
+
+        default = str(Path.home() / f"{paths.slugify(site.name)}{backup.SUFFIX}")
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Save encrypted backup", default, f"VPN Agent backup (*{backup.SUFFIX})"
+        )
+        if not filename:
+            return
+
+        try:
+            written = backup.write_backup(site, passphrase, Path(filename))
+        except backup.BackupError as exc:
+            self._warn("Backup failed", str(exc))
+            return
+
+        self._append(f"Encrypted backup written to {written}")
+        self._append("   Holds the server key and the certificate authority.")
+        self._append("   Without the passphrase it cannot be opened — including by you.")
+
+    def on_restore(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Restore from backup", str(Path.home()),
+            f"VPN Agent backup (*{backup.SUFFIX})"
+        )
+        if not filename:
+            return
+        path = Path(filename)
+
+        try:
+            info = backup.describe(path.read_bytes())
+        except (backup.BackupError, OSError) as exc:
+            self._warn("Not a backup file", str(exc))
+            return
+
+        name = info["site"]
+        overwrite = store.site_exists(name)
+        if overwrite and not self._confirm(
+            "Replace the existing server?",
+            f"A server named {name!r} already exists.\n\nRestoring replaces its keys, "
+            "which invalidates every config already issued from it. Continue?",
+        ):
+            return
+
+        passphrase = self._ask_passphrase(f"Passphrase for {name!r}:")
+        if passphrase is None:
+            return
+
+        try:
+            site = backup.restore(path, passphrase, overwrite=overwrite)
+        except backup.BackupError as exc:
+            self._warn("Restore failed", str(exc))
+            return
+
+        self._append(f"Restored {site.name!r} with {len(site.peers)} device(s).")
+        self._append("   Deploy it to make the server match this state again.")
+        self._refresh_sites(select=site.name)
+
+    def _ask_passphrase(self, prompt: str) -> str | None:
+        text, ok = QInputDialog.getText(
+            self, "Passphrase", prompt, QLineEdit.EchoMode.Password
+        )
+        if not ok:
+            return None
+        if not text:
+            self._warn("Empty passphrase", "An unencrypted backup of a CA key is not offered.")
+            return None
+        return text
+
     def on_save_script(self) -> None:
         site = self._site
         if site is None:
@@ -1019,6 +1220,14 @@ class ServerTab(QWidget):
 
     def _on_done(self, result, label: str) -> None:
         self._set_busy(False)
+
+        if label == "status":
+            if getattr(result, "reachable", False):
+                self._show_status(result)
+            else:
+                self._append(f"\nstatus FAILED: {result.summary()}")
+            return
+
         if getattr(result, "success", False):
             self._append(f"\n{label}: {result.summary()}")
             if label == "deploy" and self._site is not None:
