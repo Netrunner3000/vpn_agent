@@ -14,6 +14,8 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 9 | Live server status — who is connected, last handshake, transfer | design | M | DONE |
 | 10 | Encrypted backup and restore of a site's keys | security | M | DONE |
 | 11 | Pi-hole / AdGuard on the VPN for network-wide ad blocking | feature | L | IDEA |
+| 15 | WireGuard-level obfuscation (udp2raw / wstunnel) — currently only OpenVPN can be wrapped | feature | L | IDEA |
+| 16 | Route the app's own IP and DNS checks through the proxy chain | feature | S | IDEA |
 | 12 | Auto-connect on untrusted wifi | feature | M | IDEA |
 | 13 | Dynamic DNS updater for native mode | feature | S | IDEA |
 | 14 | Lab Hub launchpad entry for VPN Agent | infra | S | IDEA |
@@ -33,6 +35,8 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Peer key rotation without a server rebuild | Aug 2026 |
 | Live server status: handshake age, transfer, connected devices | Aug 2026 |
 | Encrypted site backup and restore (scrypt + AES-256-GCM) | Aug 2026 |
+| Privacy tab: Tor client, proxy chains, MAC randomisation | Aug 2026 |
+| Server obfuscation: stunnel TLS wrap and Tor onion service | Aug 2026 |
 | In-app docs: **? Docs** in the title bar, **? Server Guide** on the Build Server tab, tooltips on every control with a global toggle | Aug 2026 |
 
 ## Rejected
