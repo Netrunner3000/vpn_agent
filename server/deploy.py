@@ -21,7 +21,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable
 
-from . import bootstrap, provision
+from . import bootstrap, obfuscation, provision
 from .model import MODE_NATIVE, MODE_REMOTE, Site
 
 OutputCallback = Callable[[str], None]
@@ -155,6 +155,12 @@ def deploy(
         result = _run_local(site, script, on_output)
 
     if result.success:
+        # The installer echoes the onion address on a line of its own because
+        # it is generated on the server and would otherwise exist only there.
+        if site.onion_enabled:
+            address = obfuscation.parse_onion_address(result.output)
+            if address and address != site.onion_address:
+                site.onion_address = address
         provision.mark_deployed(site)
     return result
 

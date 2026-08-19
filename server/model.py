@@ -36,6 +36,15 @@ DEFAULT_WG_SUBNET6 = "fd42:66:66::/64"
 DEFAULT_OVPN_SUBNET4 = "10.67.67.0/24"
 DEFAULT_DNS = ("1.1.1.1", "1.0.0.1")
 
+# Obfuscation options for the OpenVPN fallback.
+OBFS_NONE = "none"
+OBFS_STUNNEL = "stunnel"
+OBFS_MODES = (OBFS_NONE, OBFS_STUNNEL)
+
+# Where OpenVPN listens when stunnel is fronting it. Loopback only — the whole
+# point is that nothing but stunnel can reach it.
+DEFAULT_OVPN_LOCAL_PORT = 1194
+
 # Addresses .1 is the server; peers start here.
 FIRST_PEER_OFFSET = 2
 
@@ -115,6 +124,15 @@ class Site:
     wg_port: int = DEFAULT_WG_PORT
     ovpn_port: int = DEFAULT_OVPN_PORT
     enable_openvpn: bool = True
+
+    # Concealment. `stunnel` fronts OpenVPN with a real TLS listener, so what a
+    # deep-packet inspector sees on the wire is an ordinary HTTPS handshake
+    # rather than OpenVPN's own. An onion service makes the server reachable
+    # without any public address at all, which is the only option behind CGNAT.
+    obfuscation: str = OBFS_NONE
+    ovpn_local_port: int = DEFAULT_OVPN_LOCAL_PORT
+    onion_enabled: bool = False
+    onion_address: str = ""          # learned from the server after a deploy
 
     # Address plan
     wg_subnet4: str = DEFAULT_WG_SUBNET4
@@ -233,6 +251,20 @@ class Site:
             parts.append(peer.address6)
         return ", ".join(parts)
 
+    @property
+    def ovpn_bind_port(self) -> int:
+        """
+        The port the OpenVPN daemon listens on.
+
+        With stunnel in front it retreats to a loopback port and stunnel takes
+        the public one; otherwise it holds the public port itself.
+        """
+        return self.ovpn_local_port if self.obfuscation == OBFS_STUNNEL else self.ovpn_port
+
+    @property
+    def ovpn_binds_loopback_only(self) -> bool:
+        return self.obfuscation == OBFS_STUNNEL
+
     def natted_subnets(self) -> list[str]:
         """Subnets the server must masquerade for outbound traffic."""
         subnets = [self.wg_subnet4]
@@ -305,6 +337,26 @@ class Site:
                 )
         except ValueError:
             pass  # already reported above
+
+        if self.obfuscation not in OBFS_MODES:
+            problems.append(
+                f"Unknown obfuscation {self.obfuscation!r} (expected one of {OBFS_MODES})."
+            )
+        if self.obfuscation == OBFS_STUNNEL and not self.enable_openvpn:
+            problems.append(
+                "stunnel obfuscation wraps the OpenVPN fallback, but OpenVPN is "
+                "disabled — there would be nothing behind it."
+            )
+        if self.obfuscation == OBFS_STUNNEL and self.ovpn_local_port == self.ovpn_port:
+            problems.append(
+                "With stunnel in front, OpenVPN must listen on a different (loopback) "
+                "port than the public one stunnel occupies."
+            )
+        if self.onion_enabled and not self.enable_openvpn:
+            problems.append(
+                "An onion service can only carry TCP, so it fronts the OpenVPN "
+                "fallback — which is disabled."
+            )
 
         if self.mode == MODE_REMOTE and not self.ssh.is_configured():
             problems.append("Remote mode needs an SSH host to deploy to.")

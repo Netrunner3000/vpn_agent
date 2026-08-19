@@ -44,7 +44,7 @@ from app.doc_dialog import DocDialog
 from app.server_doc_content import SERVER_DOC_HTML
 from server import deploy as deploy_mod
 from server import backup, bootstrap, export, paths, provision, store
-from server.model import MODE_NATIVE, MODE_REMOTE, Site
+from server.model import MODE_NATIVE, MODE_REMOTE, OBFS_NONE, OBFS_STUNNEL, Site
 
 
 # ── Workers ──────────────────────────────────────
@@ -360,6 +360,42 @@ class ServerTab(QWidget):
             "Enabling this later issues certificates for every existing device."
         )
         form.addRow("", self.chk_openvpn)
+
+        self.combo_obfs = QComboBox()
+        self.combo_obfs.addItem("None — OpenVPN speaks for itself", OBFS_NONE)
+        self.combo_obfs.addItem("stunnel — wrap it in real TLS on 443", OBFS_STUNNEL)
+        self.combo_obfs.setToolTip(
+            "Hide that this is a VPN at all.\n\n"
+            "OpenVPN already uses tls-crypt, which hides the handshake's contents.\n"
+            "But the packet sizes and timing of an OpenVPN session stay recognisable\n"
+            "to an inspector that is looking for them.\n\n"
+            "stunnel puts a real TLS listener on the public port and forwards to\n"
+            "OpenVPN bound to loopback, so what crosses the network is an ordinary\n"
+            "TLS session — not resembling HTTPS, actually being it on the wire.\n\n"
+            "The cost is real: every device then needs stunnel running locally too.\n"
+            "The exported bundle includes its config and the CA to verify against.\n\n"
+            "WireGuard is unaffected and still connects directly."
+        )
+        form.addRow("Obfuscation", self.combo_obfs)
+
+        self.chk_onion = QCheckBox("Publish a Tor onion service")
+        self.chk_onion.setToolTip(
+            "Make the server reachable through Tor, with no public address at all.\n\n"
+            "This is the answer to CGNAT: if your ISP gives you no reachable address,\n"
+            "no amount of dynamic DNS helps, and a hidden service is the only way in.\n"
+            "It also means the server's real address is never given to a client.\n\n"
+            "Onion services carry TCP only, so this fronts the OpenVPN fallback\n"
+            "rather than WireGuard. Slower than the direct route — a path of last\n"
+            "resort, not an everyday one.\n\n"
+            "The address is generated on the server and captured after the deploy."
+        )
+        form.addRow("", self.chk_onion)
+
+        self.lbl_onion = QLabel("—")
+        self.lbl_onion.setObjectName("StatusValue")
+        self.lbl_onion.setWordWrap(True)
+        self.lbl_onion.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        form.addRow("Onion address", self.lbl_onion)
 
         self.chk_full_tunnel = QCheckBox("Route all client traffic through the server")
         self.chk_full_tunnel.setToolTip(
@@ -729,6 +765,14 @@ class ServerTab(QWidget):
         self.spin_ovpn_port.setEnabled(site.enable_openvpn)
         self.chk_openvpn.setChecked(site.enable_openvpn)
         self.chk_full_tunnel.setChecked(site.full_tunnel)
+        obfs_index = self.combo_obfs.findData(site.obfuscation)
+        self.combo_obfs.setCurrentIndex(obfs_index if obfs_index >= 0 else 0)
+        self.combo_obfs.setEnabled(site.enable_openvpn)
+        self.chk_onion.setChecked(site.onion_enabled)
+        self.chk_onion.setEnabled(site.enable_openvpn)
+        self.lbl_onion.setText(
+            site.onion_address or ("(published on the next deploy)" if site.onion_enabled else "—")
+        )
         self.edit_dns.setText(", ".join(site.dns))
         self.edit_lan.setText(", ".join(site.lan_routes))
         self.edit_lan.setEnabled(not site.full_tunnel)
@@ -880,6 +924,8 @@ class ServerTab(QWidget):
         site.wg_port = self.spin_wg_port.value()
         site.ovpn_port = self.spin_ovpn_port.value()
         site.full_tunnel = self.chk_full_tunnel.isChecked()
+        site.obfuscation = self.combo_obfs.currentData()
+        site.onion_enabled = self.chk_onion.isChecked()
         site.dns = [d.strip() for d in self.edit_dns.text().split(",") if d.strip()]
         site.lan_routes = [r.strip() for r in self.edit_lan.text().split(",") if r.strip()]
 
@@ -1232,6 +1278,8 @@ class ServerTab(QWidget):
             self._append(f"\n{label}: {result.summary()}")
             if label == "deploy" and self._site is not None:
                 self._load_site(self._site.name)
+                if self._site and self._site.onion_address:
+                    self._append(f"Onion address: {self._site.onion_address}")
                 self._append(
                     "Export a device config and import it on the device to connect."
                 )

@@ -22,8 +22,8 @@ from pathlib import Path
 
 import segno
 
-from . import paths, render
-from .model import Peer, Site
+from . import obfuscation, paths, render
+from .model import OBFS_STUNNEL, Peer, Site
 
 QR_SCALE = 6
 QR_BORDER = 2
@@ -63,6 +63,19 @@ def export_peer(
     if include_openvpn and site.enable_openvpn and peer.has_openvpn:
         ovpn_text = render.ovpn_client_config(site, peer)
         written["openvpn"] = paths.write_private(target / f"{slug}.ovpn", ovpn_text)
+
+        # A stunnel-fronted server needs three files on the device, not one:
+        # the profile, the stunnel config it connects through, and the CA that
+        # lets stunnel verify the server rather than trusting anything.
+        if site.obfuscation == OBFS_STUNNEL:
+            written["stunnel"] = paths.write_private(
+                target / "stunnel-client.conf", obfuscation.stunnel_client_config(site)
+            )
+            written["ca"] = paths.write_private(target / "ca.crt", site.ca_cert_pem)
+
+    notes = obfuscation.client_instructions(site)
+    if notes:
+        written["readme"] = paths.write_private(target / "READ-ME-FIRST.txt", notes)
 
     return written
 

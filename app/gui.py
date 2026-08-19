@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.styles import DARK_STYLESHEET
 from app.doc_dialog import DocDialog
+from app.privacy_tab import PrivacyTab
 from app.server_tab import ServerTab
 from services import public_ip, dns_check, latency, profile_store, wireguard_manager, killswitch
 from services.health_monitor import HealthMonitor
@@ -97,6 +98,9 @@ class MainWindow(QMainWindow):
 
         self.server_tab = ServerTab()
         self.tabs.addTab(self.server_tab, "Build Server")
+
+        self.privacy_tab = PrivacyTab()
+        self.tabs.addTab(self.privacy_tab, "Privacy")
         root_layout.addWidget(self.tabs)
 
         self._init_health_monitor()  # must come before _refresh_profiles
@@ -851,6 +855,8 @@ class MainWindow(QMainWindow):
         #    happen before Qt starts destroying child widgets.
         if getattr(self, "server_tab", None) is not None:
             self.server_tab.shutdown()
+        if getattr(self, "privacy_tab", None) is not None:
+            self.privacy_tab.shutdown()
 
         # 1. Disconnect health monitor signals immediately — prevents any
         #    in-flight thread from firing a callback into this window

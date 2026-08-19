@@ -23,7 +23,7 @@ import base64
 import ipaddress
 from pathlib import Path
 
-from . import render
+from . import obfuscation, render
 from .model import Site
 
 NAT_HELPER_PATH = "/usr/local/sbin/vpn-agent-nat"
@@ -60,9 +60,15 @@ def linux_bootstrap(site: Site) -> str:
         _linux_nat(site, subnets4, subnet6),
         _linux_firewall(site),
         _linux_services(site),
-        _linux_verify(site),
     ]
-    return "\n".join(parts)
+
+    # After the services, so OpenVPN is already listening on loopback by the
+    # time stunnel is pointed at it and the onion service is published.
+    parts.append(obfuscation.linux_stunnel_section(site))
+    parts.append(obfuscation.linux_onion_section(site))
+
+    parts.append(_linux_verify(site))
+    return "\n".join(part for part in parts if part)
 
 
 def _linux_preamble(site: Site) -> str:

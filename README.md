@@ -9,6 +9,8 @@ A PySide6 desktop app for running a VPN you own end to end. It has two halves:
 - **Build Server** — creates the server at the far end of that tunnel. Generates
   the keys, renders the configs, installs **WireGuard** and an **OpenVPN
   TCP/443 fallback** on a target host, sets up NAT, and verifies the result.
+- **Privacy** — a local **Tor** client, **proxy chains**, and **MAC address**
+  randomisation, plus per-server **obfuscation** (stunnel, onion service).
 
 Unlike a commercial VPN, no third party sits in the path. You generate every key
 and hold the certificate authority.
@@ -85,6 +87,41 @@ Recovery needs neither the app nor Python, and is printed every time it arms:
 sudo pfctl -a vpn-agent-killswitch -F all && sudo pfctl -F all -f /etc/pf.conf
 ```
 
+## Privacy tools
+
+Four tools that are often stacked in the belief the total is anonymity. It is
+not — each narrows a different, specific exposure:
+
+| Tool | Hides you from | Does **not** help with |
+|---|---|---|
+| VPN | your ISP, and the sites you visit | the VPS provider, or a subpoena to them |
+| Tor | the site learning your server's IP | the exit node reading unencrypted traffic |
+| Proxy chain | any single proxy knowing both ends | UDP, which bypasses it entirely |
+| Obfuscation | a network that blocks or fingerprints VPNs | anyone who already has your traffic |
+| MAC change | the wifi you are joined to | anything past the first router |
+
+**For real anonymity the tool is Tor Browser** — its value is the fingerprinting
+defences, and those live in the browser, not the network underneath.
+
+Three things worth knowing before relying on any of it:
+
+- **Chains carry TCP only.** UDP, and therefore ordinary DNS and QUIC, does not
+  traverse SOCKS. Test Chain speaks SOCKS natively rather than shelling out, so
+  it is a genuine end-to-end check.
+- **proxychains-ng barely works on macOS.** SIP strips its library injection from
+  everything Apple ships, so `/usr/bin/curl` connects directly while looking like
+  it worked. The generated config carries the caveat.
+- **macOS already randomises your Wi-Fi MAC** per network. This is for Ethernet
+  and USB adapters, which get no such treatment.
+
+Obfuscation is set per server on **Build Server**. `stunnel` fronts OpenVPN with
+a real TLS listener on 443 and moves OpenVPN to loopback — so the direct port
+cannot be used to bypass it. An **onion service** publishes the endpoint through
+Tor, which is the only answer to CGNAT: with no reachable public address, no
+amount of dynamic DNS helps.
+
+See [docs/PRIVACY_GUIDE.md](docs/PRIVACY_GUIDE.md).
+
 ## Where the keys live
 
 Site state — every private key, the certificate authority, and the device list —
@@ -153,7 +190,7 @@ uv pip install -r requirements-dev.txt
 pytest
 ```
 
-177 tests in about five seconds — no network, no server, no Qt. Most of that time
+220 tests in about six seconds — no network, no server, no Qt. Most of that time
 is scrypt, which the backup tests exercise for real rather than stubbing; making it
 fast would mean making it weak. Every test runs against a throwaway state directory,
 so the suite can never touch the real site files and their keys.
@@ -202,8 +239,13 @@ server/     the server-building engine, no Qt dependency
   bootstrap.py  generates the installer script
   deploy.py     streams it over SSH, or runs it locally
   backup.py     encrypted site export/import
+  obfuscation.py stunnel TLS wrap and Tor onion service
   cli.py        command-line front end
 services/   client-side — public IP, DNS, latency, health, kill switch
+  tor.py        local Tor daemon, verification, new circuits
+  proxychain.py chained proxies, tested natively rather than via proxychains
+  socks_client.py  SOCKS4a/5/HTTP-CONNECT, written here to allow chaining
+  macaddr.py    hardware address randomisation
 tests/      pytest suite, incl. regression guards for shipped bugs
 docs/       GUIDE.md (Monitor), SERVER_GUIDE.md (Build Server)
 ```
@@ -219,9 +261,11 @@ deploy.
   procedure the Build Server tab automates
 - [docs/SERVER_GUIDE.md](docs/SERVER_GUIDE.md) — building, deploying and
   operating a server
+- [docs/PRIVACY_GUIDE.md](docs/PRIVACY_GUIDE.md) — Tor, proxy chains,
+  obfuscation and MAC addresses, and what each is actually for
 
-Both are readable in the app: **? Docs** in the title bar, **? Server Guide** on
-the Build Server tab. Every control has a tooltip explaining what it does and
+All three are readable in the app: **? Docs** in the title bar, **? Server Guide**
+on the Build Server tab, **? Privacy Guide** on the Privacy tab. Every control has a tooltip explaining what it does and
 why; the **Tooltips** toggle turns them all off.
 
 ## Honest limitations
@@ -234,6 +278,9 @@ why; the **Tooltips** toggle turns them all off.
   to trust a VPN company.
 - **The installer targets Debian/Ubuntu**, checks for `apt-get`, and stops rather
   than guessing on anything else.
+- **The obfuscation and onion paths are not live-tested.** Config generation is
+  covered by tests; the deploy path for those two has not been run against a real
+  server.
 - **macOS is a poor always-on server** — it sleeps, and the installer appends to
   `/etc/pf.conf`, which system updates overwrite. The app detects that and warns
   on the next launch, but a Raspberry Pi is still the better home server.
