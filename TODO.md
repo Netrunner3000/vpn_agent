@@ -18,8 +18,13 @@
 
 ### Not yet exercised live
 
+> Step-by-step runbook for all three: [`docs/V2_LIVE_VERIFICATION.md`](docs/V2_LIVE_VERIFICATION.md).
+> The teardown `/etc/pf.conf` surgery was proved once on a copy of the real file
+> (2026-08-20): our block removed, all 7 Apple anchors preserved, byte-identical
+> restore — see Path A. The live arm + fail-closed drop is still pending.
+
 - [ ] `P1` `security` `@me` Arm the kill switch once with a tunnel up. It needs an admin password and briefly interrupts networking, so it has only been verified by rule generation, `pfctl -n` parse checks and the pf semantics tests. Keep the recovery command in a second terminal: `sudo pfctl -a vpn-agent-killswitch -F all && sudo pfctl -F all -f /etc/pf.conf`
-- [ ] `P2` `testing` `@me` Run a native macOS teardown once, to confirm the `/etc/pf.conf` surgery behaves on a real file
+- [ ] `P2` `testing` `@me` Run a native macOS teardown once, to confirm the `/etc/pf.conf` surgery behaves on a real file (surgery proved on a copy; full deploy→teardown still open — see runbook Path B)
 
 ## v3 — later
 
