@@ -35,6 +35,7 @@ pyinstaller --noconfirm --clean --windowed \
   --add-data "assets/icon.icns:assets" \
   --add-data "docs/GUIDE.md:docs" \
   --add-data "docs/SERVER_GUIDE.md:docs" \
+  --add-data "docs/PRIVACY_GUIDE.md:docs" \
   --add-data "config/vpn_profiles.json:config" \
   --add-data "config/settings.json:config" \
   --hidden-import PySide6.QtNetwork \

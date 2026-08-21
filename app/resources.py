@@ -35,5 +35,15 @@ def guide_path() -> Path:
     return bundle_root() / "docs" / "GUIDE.md"
 
 
+# Every document the build is supposed to ship. The self-test walks this, so a
+# guide added to docs/ but forgotten in build_app.sh fails the build rather than
+# going missing quietly in the packaged app.
+BUNDLED_DOCS = ("GUIDE.md", "SERVER_GUIDE.md", "PRIVACY_GUIDE.md")
+
+
+def doc_paths() -> list[Path]:
+    return [bundle_root() / "docs" / name for name in BUNDLED_DOCS]
+
+
 def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))

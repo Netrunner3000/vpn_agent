@@ -48,6 +48,11 @@ DOC_HTML = (
 <li>Controls WireGuard tunnels (connect / disconnect / restart)</li>
 <li>Monitors your connection health in the background and alerts you when things change</li>
 <li>Supports multiple VPN profiles (home server, VPS nodes, routers)</li>
+<li>Fails closed when a tunnel drops, via a kill switch (section 9)</li>
+<li><b>Builds the server</b> at the far end — WireGuard plus an OpenVPN fallback, with
+optional obfuscation (<b>? Server Guide</b>)</li>
+<li>Runs a local <b>Tor</b> client, chains proxies, and randomises your MAC address
+(<b>? Privacy Guide</b>)</li>
 </ul>
 <p><b>What it does NOT do:</b></p>
 <ul>
@@ -62,16 +67,18 @@ VPN server for you — press <b>? Server Guide</b> on that tab for the whole pro
 
 <h2><a name="dashboard"></a>2. Dashboard Reference</h2>
 
-<p>The window has two tabs:</p>
+<p>The window has three tabs:</p>
 <table>
 <tr><th>Tab</th><th>What it is for</th></tr>
 <tr><td><b>Monitor</b></td><td>Watching and controlling a tunnel from this Mac — public IP,
-DNS leaks, latency, connect/disconnect. This section documents it.</td></tr>
+DNS leaks, latency, connect/disconnect, kill switch. This section documents it.</td></tr>
 <tr><td><b>Build Server</b></td><td>Creating the server at the far end of that tunnel.
-Documented separately — press <b>? Server Guide</b> on that tab.</td></tr>
+Press <b>? Server Guide</b> on that tab.</td></tr>
+<tr><td><b>Privacy</b></td><td>Tor, proxy chains and MAC randomisation. Press
+<b>? Privacy Guide</b> on that tab.</td></tr>
 </table>
-<p>The title bar sits above both, so the tunnel indicator and any health warning stay
-visible whichever tab is open.</p>
+<p>The title bar sits above all three, so the tunnel indicator and any health warning
+stay visible whichever tab is open.</p>
 
 <h3>Tunnel Indicator (top right)</h3>
 <p>Shows which WireGuard interfaces are currently active on your system.</p>

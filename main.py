@@ -27,26 +27,28 @@ def selftest() -> int:
     """Verify a build can do everything it claims. Returns a shell exit code."""
     import base64
 
-    from app.resources import APP_NAME, asset_path, guide_path, is_frozen
+    from app.resources import APP_NAME, asset_path, doc_paths, is_frozen
     from server import keys, paths, pki, render
     from server.model import Site, Peer
 
     problems: list[str] = []
 
     icon = asset_path("icon.icns")
-    guide = guide_path()
     state = paths.state_dir()
 
     print(f"{APP_NAME} self-test")
     print(f"  frozen bundle:   {is_frozen()}")
     print(f"  icon asset:      {icon} ({'found' if icon.exists() else 'MISSING'})")
-    print(f"  user guide:      {guide} ({'found' if guide.exists() else 'MISSING'})")
     print(f"  state dir:       {state}")
 
     if not icon.exists():
         problems.append("icon asset missing from the bundle")
-    if not guide.exists():
-        problems.append("user guide missing from the bundle")
+
+    for guide in doc_paths():
+        found = guide.exists()
+        print(f"  {guide.name:<18} {'found' if found else 'MISSING'}")
+        if not found:
+            problems.append(f"{guide.name} missing from the bundle")
 
     # Writing inside the bundle breaks the code signature, and a reinstall
     # would silently destroy every server key the user has.

@@ -32,6 +32,11 @@ VPN Agent is a standalone desktop app that gives you a control panel for your ow
 - Controls WireGuard tunnels (connect / disconnect / restart)
 - Monitors your connection health in the background and alerts you when things change
 - Supports multiple VPN profiles (home server, VPS nodes, routers)
+- Fails closed when a tunnel drops, via a kill switch (section 9)
+- **Builds the server** at the far end — WireGuard plus an OpenVPN fallback, with
+  optional obfuscation ([SERVER_GUIDE.md](SERVER_GUIDE.md))
+- Runs a local **Tor** client, chains proxies, and randomises your MAC address
+  ([PRIVACY_GUIDE.md](PRIVACY_GUIDE.md))
 
 **What it does NOT do:**
 - It is not a commercial VPN service
@@ -45,15 +50,16 @@ VPN Agent is a standalone desktop app that gives you a control panel for your ow
 
 ## 2. Dashboard Reference
 
-The window has two tabs:
+The window has three tabs:
 
-| Tab | What it is for |
-|---|---|
-| **Monitor** | Watching and controlling a tunnel from this Mac — public IP, DNS leaks, latency, connect/disconnect. This section documents it. |
-| **Build Server** | Creating the server at the far end of that tunnel. Documented separately in [SERVER_GUIDE.md](SERVER_GUIDE.md), or the **? Server Guide** button on the tab itself. |
+| Tab | What it is for | Documented in |
+|---|---|---|
+| **Monitor** | Watching and controlling a tunnel from this Mac — public IP, DNS leaks, latency, connect/disconnect, kill switch. | this guide |
+| **Build Server** | Creating the server at the far end of that tunnel. | [SERVER_GUIDE.md](SERVER_GUIDE.md), or **? Server Guide** on the tab |
+| **Privacy** | Tor, proxy chains, MAC randomisation. | [PRIVACY_GUIDE.md](PRIVACY_GUIDE.md), or **? Privacy Guide** on the tab |
 
-The title bar sits above both, so the tunnel indicator and any health warning stay
-visible whichever tab is open.
+The title bar sits above all three, so the tunnel indicator and any health warning
+stay visible whichever tab is open.
 
 ### Tunnel Indicator (top right)
 

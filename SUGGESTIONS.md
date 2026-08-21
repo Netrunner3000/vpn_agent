@@ -20,6 +20,10 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 13 | Dynamic DNS updater for native mode | feature | S | IDEA |
 | 14 | Lab Hub launchpad entry for VPN Agent | infra | S | IDEA |
 | 6 | Raspberry Pi as the documented home-server target | infra | M | CONSIDERING |
+| 17 | Route the app's own IP/DNS checks through the chain, so Monitor reports the chained exit | feature | S | IDEA |
+| 18 | Per-network MAC profiles, mirroring what macOS does for Wi-Fi | feature | M | IDEA |
+| 19 | Auto-connect on untrusted wifi (SSID allowlist) | feature | M | IDEA |
+| 20 | Lab Hub launchpad entry for VPN Agent | infra | S | IDEA |
 | 7 | Connection health graph — throughput, handshake age | design | M | IDEA |
 | 8 | Per-app split tunnelling | feature | XL | IDEA |
 
@@ -45,3 +49,15 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 |---|---|
 | Marketing this as anonymity | It is not, and saying so would be the worst bug in the project |
 | Guessing the package manager on non-apt systems | Better to stop than to half-install |
+| Relying on proxychains for the app's own traffic | SIP strips its injection from every Apple-shipped binary, so it would fail silently on the one platform this app runs on. The chain is spoken natively instead. |
+| Shipping obfuscation binaries (udp2raw, wstunnel) to the server | They come from GitHub releases, not apt. Pulling an unsigned binary onto a box that holds your keys is a worse trade than the obfuscation is worth. stunnel and tor are both in Debian. |
+| Bundling Tor inside the .app | It would need updating on our release cadence rather than Homebrew's, and a stale Tor is a security problem rather than an inconvenience. |
+
+## The one to remember
+
+`producer | grep -q pattern` under `set -o pipefail` reports **141** (SIGPIPE), because
+grep exits on its first match and the producer dies writing into a closed pipe. The test
+therefore reads **false exactly when the pattern matched**. It shipped, skipped OpenVPN on
+a host where it was installed, and was invisible to `bash -n` and to running the pipeline
+by hand. Guarded now by `test_unit_detection_does_not_use_a_pipeline`, which forbids the
+shape rather than the symptom.
