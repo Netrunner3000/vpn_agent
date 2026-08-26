@@ -206,6 +206,72 @@ def test_native_teardown_preserves_the_rest_of_pf_conf(site, monkeypatch):
     assert "pf.conf.vpn-agent-teardown.bak" in script
 
 
+# A realistic /etc/pf.conf: Apple's shipped scaffold with our block registered
+# in the middle, so a correct cut must remove only our four lines and leave
+# every Apple anchor byte-for-byte where it was.
+_PF_CONF_APPLE = """\
+#
+# com.apple.pf.conf
+#
+scrub-anchor "com.apple/*"
+nat-anchor "com.apple/*"
+rdr-anchor "com.apple/*"
+dummynet-anchor "com.apple/*"
+anchor "com.apple/*"
+load anchor "com.apple" from "/etc/pf.anchors/com.apple"
+"""
+
+_VPN_BLOCK = (
+    "# >>> vpn-agent >>>\n"
+    'anchor "vpn-agent"\n'
+    'load anchor "vpn-agent" from "/etc/pf.anchors/vpn-agent"\n'
+    "# <<< vpn-agent <<<\n"
+)
+
+
+def test_native_teardown_awk_cuts_only_our_block(tmp_path):
+    """
+    Run the *exact* awk program that ships in the teardown script against a
+    realistic pf.conf and assert the result is byte-identical to the file
+    without our block — Apple's anchors are untouched. This executes the
+    surgery, where the sibling tests only check the script's text.
+    """
+    original = _PF_CONF_APPLE
+    injected = original + _VPN_BLOCK
+
+    src = tmp_path / "pf.conf"
+    src.write_text(injected, encoding="utf-8")
+    out = subprocess.run(
+        ["awk", bootstrap.PF_STRIP_AWK, str(src)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+
+    # Our four marker/anchor lines are gone …
+    assert "vpn-agent" not in out
+    # … Apple's anchors survive in full …
+    assert out.count("com.apple") == original.count("com.apple")
+    # … and the file is byte-identical to the pre-injection original.
+    assert out == original
+
+
+def test_native_teardown_awk_is_a_noop_without_our_block(tmp_path):
+    """A pf.conf that never had our block must pass through unchanged."""
+    src = tmp_path / "pf.conf"
+    src.write_text(_PF_CONF_APPLE, encoding="utf-8")
+    out = subprocess.run(
+        ["awk", bootstrap.PF_STRIP_AWK, str(src)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert out == _PF_CONF_APPLE
+
+
+def test_teardown_script_uses_the_shared_awk_constant(site, monkeypatch):
+    """The shipped script must embed the very program the tests above exercise."""
+    site.mode = MODE_NATIVE
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    assert bootstrap.PF_STRIP_AWK in deploy.build_teardown_script(site)
+
+
 def test_native_teardown_is_valid_bash(site, monkeypatch, tmp_path):
     site.mode = MODE_NATIVE
     monkeypatch.setattr("platform.system", lambda: "Darwin")

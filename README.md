@@ -190,7 +190,7 @@ uv pip install -r requirements-dev.txt
 pytest
 ```
 
-220 tests in about six seconds — no network, no server, no Qt. Most of that time
+223 tests in about six seconds — no network, no server, no Qt. Most of that time
 is scrypt, which the backup tests exercise for real rather than stubbing; making it
 fast would mean making it weak. Every test runs against a throwaway state directory,
 so the suite can never touch the real site files and their keys.

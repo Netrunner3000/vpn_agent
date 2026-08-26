@@ -24,6 +24,12 @@
 
 Everything left needs a real host, a password, or a `brew install`. None of it is code.
 
+> Step-by-step runbook: [`docs/V2_LIVE_VERIFICATION.md`](docs/V2_LIVE_VERIFICATION.md).
+> The teardown `/etc/pf.conf` surgery is now proved and guarded (2026-08-25): the exact
+> shipped `awk` program (`bootstrap.PF_STRIP_AWK`) runs against a realistic pf.conf in
+> three regression tests, and was run once by hand on a copy of the real file — block cut,
+> Apple anchors byte-identical. What remains below is genuinely live-only.
+
 - [ ] `P1` `security` `@me` **Arm the kill switch once** with a tunnel up. Verified so far by
   rule generation, `pfctl -n` parse checks, and tests that evaluate the ruleset the way pf
   does — but never actually loaded. Keep the recovery command in a second terminal:
@@ -32,8 +38,10 @@ Everything left needs a real host, a password, or a `brew install`. None of it i
   connects through it. Config generation is tested; the deploy path is not.
 - [ ] `P2` `testing` `@me` **Deploy with an onion service** and confirm the address is
   published and reachable.
-- [ ] `P2` `testing` `@me` **Run a native macOS teardown once**, to confirm the
-  `/etc/pf.conf` surgery behaves on a real file.
+- [ ] `P2` `testing` `@me` **Run a native macOS teardown once** against a real install. The
+  `/etc/pf.conf` surgery itself is now confirmed — proved on a copy of the real file and
+  guarded by `tests/test_v2_hardening.py::test_native_teardown_awk_*` — so what is left is
+  only the surrounding live shell (deploy → `wg-quick down`, `pfctl -f`, backup written).
 - [ ] `P2` `testing` `@me` **`brew install tor`**, then exercise Start / Verify / New Circuit.
 - [ ] `P0` `security` `@me` **Understand what this is not.** The VPS is rented in your name
   and paid with your card. It hides traffic from your ISP and your IP from sites you visit —

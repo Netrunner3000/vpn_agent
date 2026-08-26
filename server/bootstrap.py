@@ -32,6 +32,14 @@ SYSCTL_PATH = "/etc/sysctl.d/99-vpn-agent.conf"
 PF_ANCHOR_PATH = "/etc/pf.anchors/vpn-agent"
 PF_MARKER = "# >>> vpn-agent >>>"
 
+# The teardown's pf surgery: print every line except our marker block, so
+# Apple's own anchors in the same /etc/pf.conf survive untouched. Kept as a
+# named constant so a test can run the exact program that ships in the script
+# (see tests/test_v2_hardening.py::test_native_teardown_awk_*).
+PF_STRIP_AWK = (
+    "/vpn-agent >>>/ { skip = 1 } skip == 0 { print } /vpn-agent <<</ { skip = 0 }"
+)
+
 
 def _b64(text: str) -> str:
     return base64.standard_b64encode(text.encode("utf-8")).decode("ascii")
@@ -643,7 +651,7 @@ echo "[vpn-agent] WireGuard removed."
 # Cut our block out of /etc/pf.conf by marker, leaving everything else intact.
 if grep -qF '{PF_MARKER}' /etc/pf.conf 2>/dev/null; then
     cp /etc/pf.conf /etc/pf.conf.vpn-agent-teardown.bak
-    awk '/vpn-agent >>>/ {{ skip = 1 }} skip == 0 {{ print }} /vpn-agent <<</ {{ skip = 0 }}' \\
+    awk '{PF_STRIP_AWK}' \\
         /etc/pf.conf.vpn-agent-teardown.bak > /etc/pf.conf
     echo "[vpn-agent] pf anchor unregistered (backup: /etc/pf.conf.vpn-agent-teardown.bak)."
 fi

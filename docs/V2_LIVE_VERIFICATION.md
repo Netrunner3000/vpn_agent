@@ -91,8 +91,11 @@ diff /etc/pf.conf /tmp/pf.after.conf && echo "byte-identical to original ✓"
 sudo pfctl -n -f /tmp/pf.after.conf           # parses clean, applies nothing
 rm -f /tmp/pf.test.conf /tmp/pf.after.conf
 ```
-*(Already run once on 2026-08-20: block removed, all 7 Apple anchors preserved,
-result byte-identical to the original.)*
+*(Already run once on 2026-08-25: block removed, all 7 Apple anchors preserved,
+result byte-identical to the original. This is now also a permanent automated
+guard — `tests/test_v2_hardening.py::test_native_teardown_awk_cuts_only_our_block`
+runs the exact shipped `awk` program (`bootstrap.PF_STRIP_AWK`) on every `pytest`
+run, so Path A only needs re-running if you want to see it on your own live file.)*
 
 ### Path B — full end-to-end (only if you want the whole path)
 
