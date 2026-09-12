@@ -19,6 +19,7 @@
 - [x] `P2` `feature` `@ai` Obfuscation: stunnel TLS wrap (OpenVPN retreats to loopback) and a Tor onion service for CGNAT
 - [x] `P2` `feature` `@ai` MAC randomisation, locally-administered or vendor-preserving, read back to catch adapters that ignore it
 - [x] `P2` `docs` `@ai` PRIVACY_GUIDE.md, in-app guide, and a **? Privacy Guide** button
+- [x] `P1` `security` `feature` `@ai` Private-key-free WireGuard config inspection service for Sentinel — bounded local parser returns only routing/DNS/interface/endpoint metadata, discards `PrivateKey` and `PresharedKey` values at the line boundary, and performs no network or control action.
 
 ### Not yet exercised live — all @me
 

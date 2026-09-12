@@ -162,6 +162,12 @@ uv venv && uv pip install -r requirements.txt
 from this Mac. Building a server does not require it — key generation happens in
 Python, so you can set up a VPS from a machine with no WireGuard installed.
 
+The shared `services/config_inspection.py` parser supports Sentinel's local
+**Inspect config…** workflow. It accepts one explicitly selected WireGuard file,
+discards private and pre-shared key values at the line boundary, and returns only
+non-secret routing, DNS, interface and endpoint metadata. It never connects,
+resolves the endpoint, or returns the original file contents.
+
 ## Running
 
 ```bash
