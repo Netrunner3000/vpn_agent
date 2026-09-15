@@ -42,6 +42,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Privacy tab: Tor client, proxy chains, MAC randomisation | Aug 2026 |
 | Server obfuscation: stunnel TLS wrap and Tor onion service | Aug 2026 |
 | In-app docs: **? Docs** in the title bar, **? Server Guide** on the Build Server tab, tooltips on every control with a global toggle | Aug 2026 |
+| README documents `sentinel_chat_agent.py` (Sentinel's Tunnel agent: LLM advisor + offline config builder) | 2026-09-15 |
 
 ## Rejected
 

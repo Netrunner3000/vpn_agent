@@ -20,6 +20,7 @@
 - [x] `P2` `feature` `@ai` MAC randomisation, locally-administered or vendor-preserving, read back to catch adapters that ignore it
 - [x] `P2` `docs` `@ai` PRIVACY_GUIDE.md, in-app guide, and a **? Privacy Guide** button
 - [x] `P1` `security` `feature` `@ai` Private-key-free WireGuard config inspection service for Sentinel — bounded local parser returns only routing/DNS/interface/endpoint metadata, discards `PrivateKey` and `PresharedKey` values at the line boundary, and performs no network or control action.
+- [x] `P2` `docs` `@ai` Documented `sentinel_chat_agent.py` in the README — the `VpnAgent` LLM advisor and the offline `build_configs()` WireGuard config/deploy renderer that Sentinel imports as its built-in Tunnel agent.
 
 ### Not yet exercised live — all @me
 

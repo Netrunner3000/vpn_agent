@@ -152,6 +152,33 @@ Keys are generated here and never on the server, which never sees the CA key at
 all. If the VPS is compromised, the attacker sees the traffic it is carrying but
 cannot mint new client certificates or impersonate the site after you rebuild it.
 
+## In-app integration (Sentinel)
+
+`sentinel_chat_agent.py` at the repo root is what Sentinel actually imports as its
+built-in **Tunnel** (`vpn`) agent — this is "the in-app `vpn` message/configuration
+implementation" its top-level README refers to. It has two independent halves:
+
+- **`VpnAgent`** — an LLM advisor. `build_messages(prompt)` pairs the operator's
+  prompt with a structured `SYSTEM_PROMPT` that carries this app's own domain
+  knowledge (remote vs. native mode, WireGuard vs. OpenVPN, kill-switch behaviour,
+  leak surfaces) and a fixed answer shape — Summary, Topology, Security & Leaks,
+  Commands/Config, Recommendations.
+- **`build_configs(mode, protocol, ...)`** — a deterministic, offline renderer with
+  no LLM call and no crypto dependency. It produces a full WireGuard server/client
+  config plus a numbered stand-up runbook (and an OpenVPN 443 fallback block, and a
+  macOS kill-switch block for remote mode), mirroring this standalone app's own
+  config shapes. Key material is always emitted as a labelled placeholder next to
+  the exact `wg genkey`/`wg pubkey`/`wg genpsk` command that fills it — real private
+  keys are never generated or printed here.
+
+This keeps Sentinel's Tunnel agent honest with the standalone app without importing
+across repos or duplicating the crypto code: it is a second, deliberately simpler
+implementation of the same domain knowledge, not a shared library.
+
+The shared `services/config_inspection.py` parser is separate: it backs Sentinel's
+local **Inspect config…** workflow rather than the chat agent, and is documented
+under Setup below.
+
 ## Setup
 
 ```bash
@@ -237,6 +264,8 @@ server.
 ## Layout
 
 ```
+sentinel_chat_agent.py   Sentinel's in-app Tunnel (vpn) agent — LLM advisor +
+                         offline WireGuard config/deploy builder
 app/        Qt UI — gui.py (Monitor), server_tab.py (Build Server), guides
 server/     the server-building engine, no Qt dependency
   keys.py       X25519 keypairs, pre-shared keys, tls-crypt
