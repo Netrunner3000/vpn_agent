@@ -8,6 +8,8 @@
 
 ## v2 — current
 
+- [ ] `P2` `feature` `security` `@ai` Phase 3c — key and recovery lifecycle. Local key generation, protected backup/restore, integrity checking and recovery testing, with secret material excluded from chat and logs. *(moved from sentinel_fork/TODO.md)*
+- [ ] `P2` `testing` `@ai` Phase-three parity audit. Verify source, frozen and USB-portable paths plus close/reset behaviour, once the execution and recovery work exists. *(moved from sentinel_fork/TODO.md)*
 - [x] `P1` `security` `@ai` Kill-switch failure test — `tests/test_v2_hardening.py` evaluates the generated ruleset the way pf does and asserts nothing escapes a physical interface, including with the tunnel gone. Verified by mutation: punching a hole for `en0` fails three tests.
 - [x] `P1` `bug` `@ai` macOS teardown implemented — cuts our block out of `/etc/pf.conf` by marker so Apple's anchors survive, brings the tunnel down, removes configs
 - [x] `P2` `bug` `@ai` `/etc/pf.conf` overwrite detected on launch; a deployed native site whose marker has vanished warns that NAT is gone and the tunnel will carry nothing
