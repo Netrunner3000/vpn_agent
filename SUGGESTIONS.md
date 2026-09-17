@@ -6,13 +6,6 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 
 | # | Suggestion | Category | Effort | Status |
 |---|---|---|---|---|
-| 1 | Automated kill-switch leak test in CI | security | M | DONE |
-| 2 | macOS teardown, or an explicit refusal | bug | M | DONE |
-| 3 | Detect an overwritten `/etc/pf.conf` after a system update | bug | S | DONE |
-| 4 | Peer key rotation without a server rebuild | feature | M | DONE |
-| 5 | Multi-peer management for several devices on one server | feature | L | DONE |
-| 9 | Live server status — who is connected, last handshake, transfer | design | M | DONE |
-| 10 | Encrypted backup and restore of a site's keys | security | M | DONE |
 | 11 | Pi-hole / AdGuard on the VPN for network-wide ad blocking | feature | L | IDEA |
 | 15 | WireGuard-level obfuscation (udp2raw / wstunnel) — currently only OpenVPN can be wrapped | feature | L | IDEA |
 | 16 | Route the app's own IP and DNS checks through the proxy chain | feature | S | IDEA |
@@ -37,6 +30,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Test suite (177), with regression guards for every shipped bug | Aug 2026 |
 | macOS teardown, and `/etc/pf.conf` overwrite detection | Aug 2026 |
 | Peer key rotation without a server rebuild | Aug 2026 |
+| Multi-peer management — add, list and remove peers for several devices on one server | Aug 2026 |
 | Live server status: handshake age, transfer, connected devices | Aug 2026 |
 | Encrypted site backup and restore (scrypt + AES-256-GCM) | Aug 2026 |
 | Privacy tab: Tor client, proxy chains, MAC randomisation | Aug 2026 |
